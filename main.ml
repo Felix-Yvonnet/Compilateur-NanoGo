@@ -22,7 +22,7 @@ let () =
 
     if !parse_only then exit 0;
 
-    let f = Typing.file ~debug f in
+    let f = Typing.file f in
 
     if debug then begin
       let ast_dot_file = open_out (Filename.chop_suffix file ".go" ^ "_tast.dot") in
@@ -60,6 +60,3 @@ let () =
     | e ->
       eprintf "Anomaly: %s\n@." (Printexc.to_string e);
       exit 2
-
-
-
