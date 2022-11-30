@@ -10,20 +10,20 @@ concurrency:
         
 
 jobs:
-  run:
-    name: Tests
-    runs-on: ${{ matrix.operating-system }}
-    strategy:
-      matrix:
-        operating-system: [ubuntu-latest] # [macos-latest, ubuntu-latest, windows-latest]
-        #ocaml-compiler: ['4.12.0'] #[ '4.12.0', '4.10.2', '4.06.2', '4.05.1']
-    steps:
-    - uses: actions/checkout@master
-    - uses: ocaml/setup-ocaml@v2
-      with:
-        ocaml-version: ${{ matrix.ocaml-version }}
+	build:
+		runs-on: ubuntu-latest
+
+	steps:
+	- name: Checkout
+	  uses: action/checkout@v3
+
+	- name: Use OCaml
+	  uses: ocaml/setup-ocaml@v2
+	  with:
 		ocaml-compiler: 4.08.x
-        opam-depext-flag: --with-test
+		dune-cache: true
+		opam-depext-flags: --with-test
+
         
     - run: opam pin add yaml.dev -n .
     - run: opam pin add yaml-sexp.dev -n .
@@ -35,3 +35,5 @@ jobs:
       run: opam exec -- dune build
     - name: Test
       run: opam exec -- dune runtest
+
+	- run: ./tests/launch.sh
