@@ -22,14 +22,17 @@ jobs:
       with:
         ocaml-compiler: 4.08.x
         dune-cache: true
+        opam-depext-flags: --with-test
     
     - run: opam install . --deps-only
 
     # Check with OCamlformat 
     #- name: Lint fmt
     #  uses: ocaml/setup-ocaml/lint-fmt@v2
-    
-    - run: make # opam exec -- dune build
+
+    - run: opam depext --install ocamlformat=$(awk -F = '/^version=/{print $2}' .ocamlformat)
+
+    - run: opam exec -- dune build @fmt
 
     # On peut/doit mettre des name:
     - run: ./tests/launch.sh

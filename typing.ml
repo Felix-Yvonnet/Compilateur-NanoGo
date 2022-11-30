@@ -55,6 +55,7 @@ let rec type_type = function
   | PTident { id = "bool" } -> Tbool
   | PTident { id = "string" } -> Tstring
   | PTptr ty -> Tptr (type_type ty)
+(*  | PDstruct { ps_name = { id; loc } } -> { s_name = id, s_fields =  } *)
   | _ -> error dummy_loc ("unknown struct ") (* TODO type structure *)
 
 let rec eq_type ty1 ty2 = match ty1, ty2 with
@@ -63,7 +64,6 @@ let rec eq_type ty1 ty2 = match ty1, ty2 with
   | Tptr ty1, Tptr ty2 -> eq_type ty1 ty2
   | _ -> false
 (* TODO autres types *)
-
 
 let evar v = { expr_desc = TEident v; expr_typ = v.v_typ }
 
@@ -124,19 +124,22 @@ and expr_desc env loc = function
 let phase1 = function
   | PDstruct { ps_name = { id; loc } } ->
     if Hashtbl.mem structure id then 
-      error loc (sprintf "Structure %s already defined" id);
- 
+      error loc (sprintf "Structure %s already defined" id); 
     Hashtbl.add structure id { s_name = id; s_fields = Hashtbl.create 10; s_size = 0 }
 
   | PDfunction _ -> ()
 
 (* 2. declare functions and type fields *)
 let phase2 = function
-  | PDfunction { pf_name={id="main"; loc}; pf_params=[]; pf_typ=[]; } -> found_main:=true 
-  | PDfunction { pf_name={id; loc}; pf_params=pl; pf_typ=tyl; } ->
-    (* TODO *) () 
-  | PDstruct { ps_name = {id}; ps_fields = fl } ->
-    (* TODO *) () 
+  | PDfunction { pf_name={id="main"; loc}; pf_params=[]; pf_typ=[]; } -> if !found_main then 
+    error loc (sprintf "Function main already defined");
+  Hashtbl.add funct "main" { fn_name = "main"; fn_params = []; fn_typ = []; }; found_main:=true
+  | PDfunction { pf_name={id; loc}; pf_params=pl; pf_typ=tyl; } -> if Hashtbl.mem funct id then 
+    error loc (sprintf "Function %s already defined" id);
+  Hashtbl.add funct id { fn_name = id; fn_params = pl; fn_typ = tly; }
+  | PDstruct { ps_name = {id}; ps_fields = fl } -> if Hashtbl.mem funct id then 
+    error dummy_loc (sprintf "Function %s already defined" id);
+  Hashtbl.add funct id { fn_name = id; fn_params = pl; fn_typ = tly; }
 
 (* 3. type check function bodies *)
 let sizeof = function
