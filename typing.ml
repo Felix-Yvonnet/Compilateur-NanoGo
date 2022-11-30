@@ -1,4 +1,3 @@
-
 open Format
 open Lib
 open Ast
@@ -47,8 +46,9 @@ let found_main = ref false
 
 let structure: (string, structure) Hashtbl.t = Hashtbl.create 10
 
-
 (* TODO environnement pour les fonctions *)
+
+let funct: (string, function_) Hashtbl.t = Hashtbl.create 10
 
 let rec type_type = function
   | PTident { id = "int" } -> Tint
@@ -157,7 +157,7 @@ let file (imp, dl) =
   (* fmt_imported := imp; *)
   List.iter phase1 dl;
   List.iter phase2 dl;
-  if not !found_main then error dummy_loc "missing method main";
+  if not !found_main then error dummy_loc "Missing method main";
   let dl = List.map phase3 dl in
   Context.check_unused (); (* TODO variables non utilisees *)
   if imp && not !fmt_used then error dummy_loc "fmt imported but not used";
