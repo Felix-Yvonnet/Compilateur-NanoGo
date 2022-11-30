@@ -1,16 +1,12 @@
 name: Yaml
-on: [push]
-
-
-name: develop
 
 on: push
 
 concurrency:
   # any in-progress job or run
   group: ${{ github.ref }}
-    # interrompt pipeline si nouveau commit
-    cancel-in-progress: true
+  # interrompt pipeline si nouveau commit
+  cancel-in-progress: true
         
 
 jobs:
@@ -26,7 +22,9 @@ jobs:
     - uses: ocaml/setup-ocaml@v2
       with:
         ocaml-version: ${{ matrix.ocaml-version }}
+		ocaml-compiler: 4.08.x
         opam-depext-flag: --with-test
+        
     - run: opam pin add yaml.dev -n .
     - run: opam pin add yaml-sexp.dev -n .
     - name: Packages
