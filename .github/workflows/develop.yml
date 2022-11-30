@@ -1,35 +1,39 @@
-name: Yaml
 
-on: 
-	push:
-		branches :
-			- master
+name: develop
+
+on: push
 
 concurrency:
   # any in-progress job or run
   group: ${{ github.ref }}
   # interrompt pipeline si nouveau commit
   cancel-in-progress: true
-        
 
 jobs:
-	lint-fmt:
-		runs-on: ubuntu-latest
+  build:
+    runs-on: ubuntu-latest
+  
+    # On récupère le code
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
 
-	steps:
-		- name: Checkout code
-		  uses: action/checkout@v3
+    - name: Use OCaml
+      uses: ocaml/setup-ocaml@v2
+      with:
+        ocaml-compiler: 4.08.x
+        dune-cache: true
+        opam-depext-flags: --with-test
+    
+    - run: opam install . --deps-only
 
-		- name: Use OCaml 4.14.x
-		  uses: ocaml/setup-ocaml@v2
-		  with:
-			ocaml-compiler: 4.14.x
-			dune-cache: true
+    # Check with OCamlformat 
+    #- name: Lint fmt
+    #  uses: ocaml/setup-ocaml/lint-fmt@v2
 
-		- name: Lint fmt
-		  uses: ocaml/setup-ocaml/lint-fmt@v2
+    - run: opam depext --install ocamlformat=$(awk -F = '/^version=/{print $2}' .ocamlformat)
 
-		- name: Dependencies
-		  run: opam install . --deps-only
+    - run: opam exec -- dune build @fmt
 
-		- run: ./tests/launch.sh
+    # On peut/doit mettre des name:
+    - run: ./tests/launch.sh
