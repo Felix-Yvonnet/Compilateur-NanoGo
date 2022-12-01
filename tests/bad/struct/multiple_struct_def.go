@@ -1,4 +1,4 @@
-package main
+package main;
 
 type S struct {
 	x1 int

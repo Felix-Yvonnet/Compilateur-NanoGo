@@ -55,7 +55,7 @@ let rec type_type = function
   | PTident { id = "bool" } -> Tbool
   | PTident { id = "string" } -> Tstring
   | PTptr ty -> Tptr (type_type ty)
-(*  | PDstruct { ps_name = { id; loc } } -> { s_name = id, s_fields =  } *)
+  | PDstruct { ps_name = { id; loc }, ps_fields } -> { s_name = id, s_fields =  List.map type_type }
   | _ -> error dummy_loc ("unknown struct ") (* TODO type structure *)
 
 let rec eq_type ty1 ty2 = match ty1, ty2 with
@@ -129,17 +129,39 @@ let phase1 = function
 
   | PDfunction _ -> ()
 
+let rec well_defined_sustruct = function
+  | PTindent {id;loc} -> Hashtbl.mem structure id
+  | PTptr t2 -> well_defined_struct t2
+
+let rec well_defined_struct_list = function
+  | [] -> true, dummy_loc, ""
+  | {{id;loc},ptype}::q -> b, pos, name = well_defined_struct ptype; if b then begin
+      if List.mem q {{id;loc}, ptype} then
+        false, loc, id;
+      else:
+        false, loc, name;
+	end
+    else:
+      b, pos, name
+
+let rec add_type_struct s = function
+  | [] -> ()
+  | {{id;loc}, ptype}::q -> Hashtbl.find s id
+
 (* 2. declare functions and type fields *)
 let phase2 = function
-  | PDfunction { pf_name={id="main"; loc}; pf_params=[]; pf_typ=[]; } -> if !found_main then 
+  | PDfunction { pf_name={id="main"; loc}; pf_params=[]; pf_typ=[]; } -> if !found_main then
     error loc (sprintf "Function main already defined");
   Hashtbl.add funct "main" { fn_name = "main"; fn_params = []; fn_typ = []; }; found_main:=true
-  | PDfunction { pf_name={id; loc}; pf_params=pl; pf_typ=tyl; } -> if Hashtbl.mem funct id then 
+  | PDfunction { pf_name={id; loc}; } -> if Hashtbl.mem funct id then 
     error loc (sprintf "Function %s already defined" id);
   Hashtbl.add funct id { fn_name = id; fn_params = pl; fn_typ = tly; }
-  | PDstruct { ps_name = {id}; ps_fields = fl } -> if Hashtbl.mem funct id then 
-    error dummy_loc (sprintf "Function %s already defined" id);
-  Hashtbl.add funct id { fn_name = id; fn_params = pl; fn_typ = tly; }
+  | PDfunction { pf_name={id; loc}; } -> if Hashtbl.mem funct id then 
+    error loc (sprintf "Function %s already defined" id);
+  Hashtbl.add funct id { fn_name = id; fn_params = []; fn_typ = []; }
+  | PDstruct { ps_name = { id; loc }; ps_fields =  pfield_list } -> b, pos, name = well_defined_struct_list pfield_list; if not b then
+    error loc (sprintf "In %s structure, %s already defined" id name);
+    add_type_struct structure pfield_list
 
 (* 3. type check function bodies *)
 let sizeof = function
