@@ -55,7 +55,9 @@ let rec type_type = function
   | PTident { id = "bool" } -> Tbool
   | PTident { id = "string" } -> Tstring
   | PTptr ty -> Tptr (type_type ty)
-  | PDstruct { ps_name = { id; loc }, ps_fields } -> { s_name = id, s_fields =  List.map type_type }
+  | PDstruct { ps_name   = name; ps_fields = pfl; } -> let hash_type: (string, field) Hashtbl.t = Hashtbl.create 5 in
+    let _ = List.map (fun x -> match x with ({id;loc},ptype) -> Hashtbl.add hash_type id (type_type ptype)) pfl in 
+    TDstruct { s_name = name; s_fields = hash_type; s_size = Hashtbl.lenth hash_type; }
   | _ -> error dummy_loc ("unknown struct ") (* TODO type structure *)
 
 let rec eq_type ty1 ty2 = match ty1, ty2 with
@@ -129,36 +131,35 @@ let phase1 = function
 
   | PDfunction _ -> ()
 
-let rec well_defined_sustruct = function
-  | PTindent {id;loc} -> Hashtbl.mem structure id
+let rec well_defined_struct = function
+  | PTident {id;loc} -> Hashtbl.mem structure id
   | PTptr t2 -> well_defined_struct t2
+
+let is_repeat valu rest = match valu with
+  | {id;loc}, ptype -> List.mem valu rest, id, loc,ptype
 
 let rec well_defined_struct_list = function
   | [] -> true, dummy_loc, ""
-  | {{id;loc},ptype}::q -> b, pos, name = well_defined_struct ptype; if b then begin
-      if List.mem q {{id;loc}, ptype} then
-        false, loc, id;
-      else:
-        false, loc, name;
-	end
-    else:
-      b, pos, name
-
-let rec add_type_struct s = function
-  | [] -> ()
-  | {{id;loc}, ptype}::q -> Hashtbl.find s id
-
+  | t::q -> let b, name, pos, ptype = is_repeat t q in if not (well_defined_struct ptype) || b then
+        false, pos, name
+    else
+      well_defined_struct_list q
+    
 (* 2. declare functions and type fields *)
 let phase2 = function
+  (* vérifier la présence de la fonction main *)
   | PDfunction { pf_name={id="main"; loc}; pf_params=[]; pf_typ=[]; } -> if !found_main then
     error loc (sprintf "Function main already defined");
   Hashtbl.add funct "main" { fn_name = "main"; fn_params = []; fn_typ = []; }; found_main:=true
-  | PDfunction { pf_name={id; loc}; } -> if Hashtbl.mem funct id then 
+  (* gère les fonctions en général *)
+  | PDfunction { pf_name={id; loc}; pf_body = pfb; pf_params = pfp; pf_typ = pft; } -> if Hashtbl.mem funct id then 
     error loc (sprintf "Function %s already defined" id);
-  Hashtbl.add funct id { fn_name = id; fn_params = pl; fn_typ = tly; }
+  Hashtbl.add funct id (type_type { fn_name = id; fn_params = pfp; fn_typ = pft; })
+
   | PDfunction { pf_name={id; loc}; } -> if Hashtbl.mem funct id then 
     error loc (sprintf "Function %s already defined" id);
   Hashtbl.add funct id { fn_name = id; fn_params = []; fn_typ = []; }
+  (* gère les structures *)
   | PDstruct { ps_name = { id; loc }; ps_fields =  pfield_list } -> b, pos, name = well_defined_struct_list pfield_list; if not b then
     error loc (sprintf "In %s structure, %s already defined" id name);
     add_type_struct structure pfield_list
