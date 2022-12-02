@@ -55,10 +55,13 @@ let rec type_type = function
   | PTident { id = "bool" } -> Tbool
   | PTident { id = "string" } -> Tstring
   | PTptr ty -> Tptr (type_type ty)
-  | PDstruct { ps_name   = name; ps_fields = pfl; } -> let hash_type: (string, field) Hashtbl.t = Hashtbl.create 5 in
-    let _ = List.map (fun x -> match x with ({id;loc},ptype) -> Hashtbl.add hash_type id (type_type ptype)) pfl in 
-    TDstruct { s_name = name; s_fields = hash_type; s_size = Hashtbl.lenth hash_type; }
   | _ -> error dummy_loc ("unknown struct ") (* TODO type structure *)
+
+let rec type_type_struct = function
+  | PDstruct { ps_name   = {id = name; loc = pos}; ps_fields = pfl; } -> let hash_type: (string, field) Hashtbl.t = Hashtbl.create 0 in
+  let _ = List.map (fun x -> match x with ({id;loc},ptype) -> Hashtbl.add hash_type id {f_name = id; f_typ = (type_type ptype); f_ofs = 0}) pfl in 
+  { s_name = name; s_fields = hash_type; s_size = Hashtbl.length hash_type; }
+  | _ -> error dummy_loc "Bad type"
 
 let rec eq_type ty1 ty2 = match ty1, ty2 with
   | Tint, Tint | Tbool, Tbool | Tstring, Tstring -> true
@@ -132,7 +135,7 @@ let phase1 = function
   | PDfunction _ -> ()
 
 let rec well_defined_struct = function
-  | PTident {id;loc} -> Hashtbl.mem structure id
+  | PTident {id;loc} -> Hashtbl.mem structure id || id = "bool" || id = "int" || id = "string" 
   | PTptr t2 -> well_defined_struct t2
 
 let is_repeat valu rest = match valu with
@@ -154,15 +157,19 @@ let phase2 = function
   (* gère les fonctions en général *)
   | PDfunction { pf_name={id; loc}; pf_body = pfb; pf_params = pfp; pf_typ = pft; } -> if Hashtbl.mem funct id then 
     error loc (sprintf "Function %s already defined" id);
-  Hashtbl.add funct id (type_type { fn_name = id; fn_params = pfp; fn_typ = pft; })
+  Hashtbl.add funct id (type_type_func { pf_name={id; loc}; pf_body = pfb; pf_params = pfp; pf_typ = pft; })
 
-  | PDfunction { pf_name={id; loc}; } -> if Hashtbl.mem funct id then 
-    error loc (sprintf "Function %s already defined" id);
-  Hashtbl.add funct id { fn_name = id; fn_params = []; fn_typ = []; }
   (* gère les structures *)
-  | PDstruct { ps_name = { id; loc }; ps_fields =  pfield_list } -> b, pos, name = well_defined_struct_list pfield_list; if not b then
+  | PDstruct { ps_name = { id; loc }; ps_fields =  pfield_list } -> let b, pos, name = well_defined_struct_list pfield_list in 
+  if not b then
     error loc (sprintf "In %s structure, %s already defined" id name);
-    add_type_struct structure pfield_list
+  let stru = type_type_struct (PDstruct { ps_name = { id; loc }; ps_fields =  pfield_list }) in
+    Hashtbl.remove structure id;
+      Hashtbl.add structure id stru
+      (* j'ai pas trouvé comment faire propre... *)
+ 
+  | _ -> error dummy_loc "Unbound struct/funct/whatever you want"
+
 
 (* 3. type check function bodies *)
 let sizeof = function
