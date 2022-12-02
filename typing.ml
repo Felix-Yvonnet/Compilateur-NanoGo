@@ -155,9 +155,15 @@ let phase2 = function
     error loc (sprintf "Function main already defined");
   Hashtbl.add funct "main" { fn_name = "main"; fn_params = []; fn_typ = []; }; found_main:=true
   (* gère les fonctions en général *)
-  | PDfunction { pf_name={id; loc}; pf_body = pfb; pf_params = pfp; pf_typ = pft; } -> if Hashtbl.mem funct id then 
+  | PDfunction { pf_name={id; loc}; pf_body = pfb; pf_params = pfp; pf_typ = pft; } -> 
+  let b, pos, name = well_defined_struct_list pfp and b2 = List.mem false (List.map (fun x -> well_defined_struct x) pft) in 
+  if Hashtbl.mem funct id then 
     error loc (sprintf "Function %s already defined" id);
-  Hashtbl.add funct id (type_type_func { pf_name={id; loc}; pf_body = pfb; pf_params = pfp; pf_typ = pft; })
+  if not b then
+    error pos (sprintf "In function %s, type %s not well defined" id name);
+  if not b2 then 
+    error loc (sprintf "In function %s, an output type not well defined" id);
+  Hashtbl.add funct id { fn_name = id; fn_params = []; fn_typ = []; }
 
   (* gère les structures *)
   | PDstruct { ps_name = { id; loc }; ps_fields =  pfield_list } -> let b, pos, name = well_defined_struct_list pfield_list in 
