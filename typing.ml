@@ -135,7 +135,7 @@ let phase1 = function
   | PDfunction _ -> ()
 
 let rec well_defined_struct = function
-  | PTident {id;loc} -> Hashtbl.mem structure id || id = "bool" || id = "int" || id = "string" 
+  | PTident {id;loc} -> Hashtbl.mem structure id || id = "bool" || id = "int" || id = "string" || id = "void" 
   | PTptr t2 -> well_defined_struct t2
 
 let is_repeat valu rest = match valu with
