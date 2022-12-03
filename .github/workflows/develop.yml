@@ -30,9 +30,9 @@ jobs:
     #- name: Lint fmt
     #  uses: ocaml/setup-ocaml/lint-fmt@v2
 
-    - run: opam depext --install ocamlformat=$(awk -F = '/^version=/{print $2}' .ocamlformat)
+    #- run: opam depext --install ocamlformat=$(awk -F = '/^version=/{print $2}' .ocamlformat)
 
-    - run: opam exec -- dune build @fmt
+    #- run: opam exec -- dune build @fmt
 
     # On peut/doit mettre des name:
     - run: ./tests/launch.sh
