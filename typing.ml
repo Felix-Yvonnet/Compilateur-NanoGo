@@ -76,7 +76,7 @@ let tvoid = Tmany []
 let make d ty = { expr_desc = d; expr_typ = ty }
 let stmt d = make d tvoid
 
-let is_l_value env x = try Contexte.find env x; true with Not_found -> false
+let is_l_value env x = try (Context.find x env; true) with Not_found -> false
 
 let rec expr env e =
   let e, ty, rt = expr_desc env e.pexpr_loc e.pexpr_desc in
@@ -118,49 +118,56 @@ and expr_desc env loc = function
     end
 
   | PEunop (Uamp, e1) ->
-    let loc = e1.pexpr_desc in
+    let loc = e1.pexpr_loc in
     let e1,_ = expr env e1 in
-    if not(is_l_value e1) then
+    let value = match e1.expr_desc with | TEident {v_name} ->  is_l_value env v_name | _ -> false in
+    if not value then
       error loc "J'vais t'faire courir moi tu vas voir rouquin + ratio + pas l-value + pas évalué";
     TEunop(Uamp, e1), Tptr e1.expr_typ, false
 
   | PEunop (Uneg, e1) ->
-    let loc = e1.pexpr_desc in
+    let loc = e1.pexpr_loc in
     let e1,_ = expr env e1 in
     if not (eq_type e1.expr_typ Tint) then
       error loc (sprintf "Expected int but got %s" (tf_typ_to_string e1.expr_type));
     TEunop(Uneg,e1), Tint, false
 
   | PEunop (Unot, e1) ->
-    let loc = e1.pexpr_desc in
+    let loc = e1.pexpr_loc in
     let e1,_ = expr env e1 in
     if not (eq_type e1.expr_typ Tbool) then
       error loc (sprintf "Expected bool but got %s" (tf_typ_to_string e1.expr_type));
     TEunop(Unot,e1), Tbool, false
 
   | PEunop (Ustar, e1) ->
-    let loc = e1.pexpr_desc in
+    let loc = e1.pexpr_loc in
     let e1,_ = expr env e1 in
     if e1.expr_desc = TEnil then
-      error loc "Cannot dereference a nil expression"
+      error loc "Ah bha c'est bien nil, bravo pour l'appareil photo !";
     let ty = 
-    begin match e1.expr_typ with
+    match e1.expr_typ with
       | Tptr t -> t
       | _ -> error loc (sprintf "Expected pointers but got %s" (tf_typ_to_string e1.expr_type));
-    end
-    if not (eq_type  Tbool) then
+    if not (eq_type ty Tbool) then
       error loc (sprintf "Expected bool but got %s" (tf_typ_to_string e1.expr_type));
-    TEunop(Unot,e1), Tbool, false
+    in
+      TEunop(Unot,e1), Tbool, false
 
   | PEcall ({id = "fmt.Print"}, el) ->
     let loc = (List.hd el).pexpr_loc in
     let l = List.map (fun x -> expr env x) el in
-    let ty = (match l with 
+    let ty = match l with 
       | [{expr_desc; expr_type = TDfunction _ }] -> 
+        match expr_desc with 
+          | Tmany el -> 
+            if List.length e.expr_typ = 1 then
+              (List.hd e).expr_typ
+            else 
+
       | _ -> 
         let typel = List.iter (fun x -> match x with | Tmany _ -> error loc "Fuctrion with many outputs not supported" | _ -> ()) el in
         
-    )
+    
     in  TEprint(ty), tvoid, false
 
   | PEcall ({id="new"}, [{pexpr_desc=PEident {id;loc}}]) ->
@@ -174,15 +181,33 @@ and expr_desc env loc = function
 
   | PEcall ({id="new"}, _) ->
     error loc "new expects a type"
-  | PEcall (id, el) ->
-    (* TODO *) assert false
+  | PEcall ({id;loc}, el) ->
+    if not (Hashtbl.mem funct id) then 
+      error loc (sprintf "Unknown function %s" id);
+    
   | PEfor (e, b) ->
-    (* TODO *) assert false
+    let e,_ = expr env e and b,rt = expr env b in
+    if not( eq_type e.expr_typ Tbool) then
+      error loc (sprintf "Expected boolean condition in the loop, got %s" (tf_typ_to_string e.expr_typ));
+    TEfor(e,b), b.expr_typ, rt
+
   | PEif (e1, e2, e3) ->
-    (* TODO *) assert false
+    let loc = e1.pexpr_loc in
+    let e1,_ = expr env e1 and e2,rt2 = expr env e2 and e3,rt3 = expr env e3 in
+    if not (eq_type e1.expr_typ Tbool) then
+      error loc (sprintf "Expected boolean condition, got %s" (tf_typ_to_string e1.expr_typ));
+    let typ = if rt1 && rt2 then 
+      if not (eq_typ e2.expr_typ e3.expr_typ) then
+        error loc (sprintf "Return types are not compatible, got %s and %s" (tf_typ_to_string e2.expr_typ) (tf_typ_to_string e3.expr_typ));
+      else e2.expr_typ else tvoid in
+    TEif(e1,e2,e3), typ, rt1 && rt2
+    
   | PEnil ->
-    (* TODO *) assert false
-  | PEident {id=id} ->
+    TEnil, Twild, false
+  | PEident {id;loc} ->
+      if id = "_" then
+        error loc ("the _ variable is not to be used")
+      
     (* TODO *) (try let v = Context.find id env in TEident v, v.v_typ, false
                 with Not_found -> error loc ("unbound variable " ^ id))
   | PEdot (e, id) ->
@@ -197,6 +222,7 @@ and expr_desc env loc = function
     (* TODO *) assert false
   | PEvars _ ->
     (* TODO *) assert false 
+  | _ -> assert false
 
 let rec type_type = function
   | PTident {id;loc} when Hashtbl.mem structure id -> Tstruct (Hashtbl.find structure id)
