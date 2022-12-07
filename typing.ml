@@ -57,11 +57,26 @@ let rec eq_type ty1 ty2 = match ty1, ty2 with
   | _ -> false
 (* TODO autres types *)
 
+let rec pf_typ_to_string = function
+  | PTident { id } ->  id
+  | PTptr t2 -> "*" ^ pf_typ_to_string t2
+
+let rec tf_typ_to_string = function
+| Tint -> "int"
+| Tbool -> "bool"
+| Tstring -> "string"
+| Tstruct structure -> structure.s_name
+| Tptr typ -> "*" ^ tf_typ_to_string typ
+| Twild -> "unit"
+| Tmany typl -> String.concat ", " (List.map tf_typ_to_string typl)
+
 let evar v = { expr_desc = TEident v; expr_typ = v.v_typ }
 
 let tvoid = Tmany []
 let make d ty = { expr_desc = d; expr_typ = ty }
 let stmt d = make d tvoid
+
+let is_l_value env x = try Contexte.find env x; true with Not_found -> false
 
 let rec expr env e =
   let e, ty, rt = expr_desc env e.pexpr_loc e.pexpr_desc in
@@ -76,23 +91,87 @@ and expr_desc env loc = function
       | Cint i -> TEconstant c, Tint, false
       | Cstring s -> TEconstant c, Tstring, false
     end
-  | PEbinop (op, e1, e2) ->
-    let e, ty, rt = e1.pexpr_desc and e3, ty2, rt2 = e2.pexpr_desc in
-    if rt || rt2 then
-      error 
-
+  | PEbinop (op, e1, e2) -> 
+    let loc1, loc2 = e1.pexpr_loc, e2.pexpr_loc in
+    let e1, _ = expr env e1 and e2,_ = expr env e2 in
+    let t1,t2 = e1.expr_typ, e2.expr_typ in
+    if not (eq_type t1 t2) then 
+      error loc2 (sprintf "Comparison between different types not supported, got %s and %s" (tf_typ_to_string t1) (tf_typ_to_string t2));
+    begin
+    match op with
+      |Beq| Bne ->
+        if e1.expr_desc = TEnil && e2.expr_desc = TEnil then 
+          error loc1 "Both side of the test are nil";
+        TEbinop(op, e1, e2), Tbool, false
+      | Badd| Bsub | Bmul | Bdiv | Bmod ->
+        if not (eq_type t1 Tint) then
+          error loc1 (sprintf " Invalid type for operation, expected integer got %s" (tf_typ_to_string t1));
+        TEbinop(op, e1, e2), Tint, false
+      | Blt | Ble | Bgt | Bge ->
+        if not (eq_type t1 Tint) then
+          error loc1 (sprintf " Invalid type for operation, expected integer got %s" (tf_typ_to_string t1));
+        TEbinop(op,e1, e2), Tbool, false
+      | Band | Bor ->
+        if not (eq_type t1 Tbool) then
+          error loc1 (sprintf " Invalid type for operation, expected bool got %s" (tf_typ_to_string t1));
+        TEbinop(op,e1,e2), Tbool, false
+    end
 
   | PEunop (Uamp, e1) ->
-    (* TODO *) assert false
-  | PEunop (Uneg | Unot | Ustar as op, e1) ->
-    (* TODO *) assert false
+    let loc = e1.pexpr_desc in
+    let e1,_ = expr env e1 in
+    if not(is_l_value e1) then
+      error loc "J'vais t'faire courir moi tu vas voir rouquin + ratio + pas l-value + pas évalué";
+    TEunop(Uamp, e1), Tptr e1.expr_typ, false
+
+  | PEunop (Uneg, e1) ->
+    let loc = e1.pexpr_desc in
+    let e1,_ = expr env e1 in
+    if not (eq_type e1.expr_typ Tint) then
+      error loc (sprintf "Expected int but got %s" (tf_typ_to_string e1.expr_type));
+    TEunop(Uneg,e1), Tint, false
+
+  | PEunop (Unot, e1) ->
+    let loc = e1.pexpr_desc in
+    let e1,_ = expr env e1 in
+    if not (eq_type e1.expr_typ Tbool) then
+      error loc (sprintf "Expected bool but got %s" (tf_typ_to_string e1.expr_type));
+    TEunop(Unot,e1), Tbool, false
+
+  | PEunop (Ustar, e1) ->
+    let loc = e1.pexpr_desc in
+    let e1,_ = expr env e1 in
+    if e1.expr_desc = TEnil then
+      error loc "Cannot dereference a nil expression"
+    let ty = 
+    begin match e1.expr_typ with
+      | Tptr t -> t
+      | _ -> error loc (sprintf "Expected pointers but got %s" (tf_typ_to_string e1.expr_type));
+    end
+    if not (eq_type  Tbool) then
+      error loc (sprintf "Expected bool but got %s" (tf_typ_to_string e1.expr_type));
+    TEunop(Unot,e1), Tbool, false
+
   | PEcall ({id = "fmt.Print"}, el) ->
-    (* TODO *) TEprint [], tvoid, false
-  | PEcall ({id="new"}, [{pexpr_desc=PEident {id}}]) ->
-    let ty = match id with
+    let loc = (List.hd el).pexpr_loc in
+    let l = List.map (fun x -> expr env x) el in
+    let ty = (match l with 
+      | [{expr_desc; expr_type = TDfunction _ }] -> 
+      | _ -> 
+        let typel = List.iter (fun x -> match x with | Tmany _ -> error loc "Fuctrion with many outputs not supported" | _ -> ()) el in
+        
+    )
+    in  TEprint(ty), tvoid, false
+
+  | PEcall ({id="new"}, [{pexpr_desc=PEident {id;loc}}]) ->
+    let ty = (match id with
       | "int" -> Tint | "bool" -> Tbool | "string" -> Tstring
-      | _ -> (* TODO *) error loc ("no such type " ^ id) in
+      | _ -> 
+        if not (Hashtbl.mem structure id) then 
+          error loc (sprintf "Undefined type %s" id);
+        Tstruct (Hashtbl.find structure id))
     TEnew ty, Tptr ty, false
+
   | PEcall ({id="new"}, _) ->
     error loc "new expects a type"
   | PEcall (id, el) ->
@@ -133,19 +212,6 @@ let rec type_type_struct = function
     let _ = List.map (fun x -> match x with ({id;loc},ptype) -> Hashtbl.add hash_type id {f_name = id; f_typ = (type_type ptype); f_ofs = 0}) pfl in 
     TDstruct { s_name = name; s_fields = hash_type; s_size = Hashtbl.length hash_type; }
   | _ -> error dummy_loc "Bad type"
-
-let rec pf_typ_to_string = function
-  | PTident { id } ->  id
-  | PTptr t2 -> "*" ^ pf_typ_to_string t2
-
-let rec tf_typ_to_string = function
-| Tint -> "int"
-| Tbool -> "bool"
-| Tstring -> "string"
-| Tstruct structure -> structure.s_name
-| Tptr typ -> "*" ^ tf_typ_to_string typ
-| Twild -> "unit"
-| Tmany typl -> String.concat ", " (List.map tf_typ_to_string typl)
 
 let rec type_type_func = function
   | PDfunction {pf_name;pf_params;pf_typ;pf_body;} -> 
