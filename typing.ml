@@ -67,7 +67,7 @@ let rec tf_typ_to_string = function
 | Tstring -> "string"
 | Tstruct structure -> structure.s_name
 | Tptr typ -> "*" ^ tf_typ_to_string typ
-| Twild -> "unit"
+| Twild -> "'a"
 | Tmany typl -> String.concat ", " (List.map tf_typ_to_string typl)
 
 let evar v = { expr_desc = TEident v; expr_typ = v.v_typ }
@@ -76,7 +76,8 @@ let tvoid = Tmany []
 let make d ty = { expr_desc = d; expr_typ = ty }
 let stmt d = make d tvoid
 
-let is_l_value env x = try (Context.find x env; true) with Not_found -> false
+
+let is_l_value env id =  try (Context.find id env; true) with Not_found -> false
 
 let rec expr env e =
   let e, ty, rt = expr_desc env e.pexpr_loc e.pexpr_desc in
@@ -117,7 +118,7 @@ and expr_desc env loc = function
         TEbinop(op,e1,e2), Tbool, false
     end
 
-  | PEunop (Uamp, e1) ->
+  | PEunop (Uamp, e1) -> 
     let loc = e1.pexpr_loc in
     let e1,_ = expr env e1 in
     let value = match e1.expr_desc with | TEident {v_name} ->  is_l_value env v_name | _ -> false in
@@ -129,14 +130,14 @@ and expr_desc env loc = function
     let loc = e1.pexpr_loc in
     let e1,_ = expr env e1 in
     if not (eq_type e1.expr_typ Tint) then
-      error loc (sprintf "Expected int but got %s" (tf_typ_to_string e1.expr_type));
+      error loc (sprintf "Expected int but got %s" (tf_typ_to_string e1.expr_typ));
     TEunop(Uneg,e1), Tint, false
 
   | PEunop (Unot, e1) ->
     let loc = e1.pexpr_loc in
     let e1,_ = expr env e1 in
     if not (eq_type e1.expr_typ Tbool) then
-      error loc (sprintf "Expected bool but got %s" (tf_typ_to_string e1.expr_type));
+      error loc (sprintf "Expected bool but got %s" (tf_typ_to_string e1.expr_typ));
     TEunop(Unot,e1), Tbool, false
 
   | PEunop (Ustar, e1) ->
@@ -147,36 +148,29 @@ and expr_desc env loc = function
     let ty = 
     match e1.expr_typ with
       | Tptr t -> t
-      | _ -> error loc (sprintf "Expected pointers but got %s" (tf_typ_to_string e1.expr_type));
-    if not (eq_type ty Tbool) then
-      error loc (sprintf "Expected bool but got %s" (tf_typ_to_string e1.expr_type));
+      | typ -> error loc (sprintf "Expected pointers but got %s" (tf_typ_to_string typ))
     in
-      TEunop(Unot,e1), Tbool, false
+      TEunop(Ustar,e1), ty, false
 
-  | PEcall ({id = "fmt.Print"}, el) ->
+  | PEcall ({id = "fmt.Print"}, el) -> fmt_used := true;
     let loc = (List.hd el).pexpr_loc in
-    let l = List.map (fun x -> expr env x) el in
-    let ty = match l with 
-      | [{expr_desc; expr_type = TDfunction _ }] -> 
-        match expr_desc with 
-          | Tmany el -> 
-            if List.length e.expr_typ = 1 then
-              (List.hd e).expr_typ
-            else 
-
-      | _ -> 
-        let typel = List.iter (fun x -> match x with | Tmany _ -> error loc "Fuctrion with many outputs not supported" | _ -> ()) el in
-        
-    
-    in  TEprint(ty), tvoid, false
+    let handle e = 
+      let e,_ = expr env e in e
+    in 
+    let l = List.map handle el in 
+    (match l with 
+      | [{expr_desc = TEcall _}] -> let e = List.hd l in 
+        TEprint [e], tvoid, false
+      | _ -> List.iter (function |{expr_typ = Tmany _} -> error loc "Function call as part of a plotting are not supported" | _ -> ()) l;
+        TEprint l, tvoid, false)
 
   | PEcall ({id="new"}, [{pexpr_desc=PEident {id;loc}}]) ->
-    let ty = (match id with
+    let ty = match id with
       | "int" -> Tint | "bool" -> Tbool | "string" -> Tstring
-      | _ -> 
-        if not (Hashtbl.mem structure id) then 
+      | _ -> if not (Hashtbl.mem structure id) then 
           error loc (sprintf "Undefined type %s" id);
-        Tstruct (Hashtbl.find structure id))
+        Tstruct (Hashtbl.find structure id) 
+    in
     TEnew ty, Tptr ty, false
 
   | PEcall ({id="new"}, _) ->
@@ -184,6 +178,15 @@ and expr_desc env loc = function
   | PEcall ({id;loc}, el) ->
     if not (Hashtbl.mem funct id) then 
       error loc (sprintf "Unknown function %s" id);
+    let handle e = 
+      let e,_ = expr env e in e
+    in 
+    let l = List.map handle el in 
+    (match l with 
+      | [{expr_desc = TEcall _}] -> let e = List.hd l in 
+        TEprint [e], tvoid, false
+      | _ -> List.iter (function |{expr_typ = Tmany _} -> error loc "Function call as part of a plotting are not supported" | _ -> ()) l;
+        TEprint l, tvoid, false)
     
   | PEfor (e, b) ->
     let e,_ = expr env e and b,rt = expr env b in
@@ -196,17 +199,17 @@ and expr_desc env loc = function
     let e1,_ = expr env e1 and e2,rt2 = expr env e2 and e3,rt3 = expr env e3 in
     if not (eq_type e1.expr_typ Tbool) then
       error loc (sprintf "Expected boolean condition, got %s" (tf_typ_to_string e1.expr_typ));
-    let typ = if rt1 && rt2 then 
-      if not (eq_typ e2.expr_typ e3.expr_typ) then
+    let typ = if rt2 && rt3 then (
+      if not (eq_type e2.expr_typ e3.expr_typ) then
         error loc (sprintf "Return types are not compatible, got %s and %s" (tf_typ_to_string e2.expr_typ) (tf_typ_to_string e3.expr_typ));
-      else e2.expr_typ else tvoid in
-    TEif(e1,e2,e3), typ, rt1 && rt2
+      e2.expr_typ) else tvoid in
+    TEif(e1,e2,e3), typ, rt2 && rt3
     
   | PEnil ->
     TEnil, Twild, false
   | PEident {id;loc} ->
       if id = "_" then
-        error loc ("the _ variable is not to be used")
+        error loc ("the _ variable is not to be used");
       
     (* TODO *) (try let v = Context.find id env in TEident v, v.v_typ, false
                 with Not_found -> error loc ("unbound variable " ^ id))
@@ -314,11 +317,8 @@ let phase2 = function
       error pos (sprintf "In structure %s, type %s not well defined" id name);
     let stru = type_type_struct (PDstruct { ps_name = { id; loc }; ps_fields =  pfield_list }) in
       Hashtbl.remove structure id;
-      (match stru with | TDstruct s -> Hashtbl.add structure id s)
+      (match stru with | TDstruct s -> Hashtbl.add structure id s |_ -> error dummy_loc "Not supposed to be")
       (* j'ai pas trouvé comment faire propre... *)
- 
-  | _ -> error dummy_loc "Unbound struct/funct/whatever you want"
-
 
 (* 3. type check function bodies *)
 let sizeof = function
