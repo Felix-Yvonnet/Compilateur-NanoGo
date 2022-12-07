@@ -1,8 +1,8 @@
 package main;
 
 type S struct {
-	x3 s
-	x4 int
+	x3 s;
+	x4 int;
 };
 
 /*

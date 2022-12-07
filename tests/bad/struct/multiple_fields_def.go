@@ -1,8 +1,8 @@
 package main;
 
 type S struct {
-	x int
-	x string
+	x int;
+	x string;
 };
 
 func main(){}
