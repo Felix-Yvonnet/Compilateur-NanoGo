@@ -185,15 +185,23 @@ and expr_desc env loc = function
   | PEcall ({id;loc}, el) ->
       if not (Hashtbl.mem funct id) then 
       error loc (sprintf "Unknown function %s" id);
-    let l = List.map (handle env) el in
-    (match l with
-      | [{expr_desc = TEcall (f,el2)}] ->
-        if List.length el2 != List.length el then 
-          error loc (sprintf "Output size of %s is not matching %s input size" f.fn_name id);
-        (* vérif type et ajouter *)
-      | [e] -> TEcall (Hashtbl.find funct id, [e]), e.expr_typ, false
-      | _ -> List.iter (function |{expr_typ = Tmany _} -> error loc "Function call as part of a plotting are not supported" | _ -> ()) l;
-        TEprint l, tvoid, false)
+    let el = List.map (handle env) el in
+    let f = Hashtbl.find funct id in
+    (match el with
+      | [{expr_desc = TEcall (g,el2)}] when List.length f.fn_params > 1 ->
+        if List.length g.fn_typ != List.length f.fn_params then 
+          error loc (sprintf "Output size of %s (%d) is not matching %s input size (%d)" g.fn_name (List.length el2) id (List.length el));
+        let typlid = List.map (fun x -> x.v_typ) (Hashtbl.find funct id).fn_params in
+        List.iter2 (fun typ1 typ -> if not (eq_type typ1 typ) then
+              error loc (sprintf "Function %s expects type %s but got type %s" id (tf_typ_to_string (Tmany typlid)) (tf_typ_to_string (Tmany g.fn_typ)));
+        ) typlid g.fn_typ; 
+        TEcall (f,el), Tmany f.fn_typ, false
+      
+      | el -> List.iter (function |{expr_typ = Tmany _} -> error loc "Function call as part of a plotting are not supported" | _ -> ()) el;
+        if List.length f.fn_typ = 1 then
+          TEcall (f,el), List.hd f.fn_typ, false
+        else
+          TEcall (f,el), Tmany f.fn_typ, false)
     
   | PEfor (e, b) ->
     let e,_ = expr env e and b,rt = expr env b in
