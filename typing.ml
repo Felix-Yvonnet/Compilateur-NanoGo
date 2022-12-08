@@ -61,13 +61,18 @@ let rec pf_typ_to_string = function
   | PTident { id } ->  id
   | PTptr t2 -> "*" ^ pf_typ_to_string t2
 
+let rec pf_list_to_string = function
+  | [] -> "nil"
+  | pf_typ -> String.concat ", " (List.map (fun x -> pf_typ_to_string x) pf_typ)
+
 let rec tf_typ_to_string = function
 | Tint -> "int"
 | Tbool -> "bool"
 | Tstring -> "string"
 | Tstruct structure -> structure.s_name
 | Tptr typ -> "*" ^ tf_typ_to_string typ
-| Twild -> "'a"
+| Twild -> "nil"
+| Tmany [] -> "nil"
 | Tmany typl -> String.concat ", " (List.map tf_typ_to_string typl)
 
 let evar v = { expr_desc = TEident v; expr_typ = v.v_typ }
@@ -79,9 +84,13 @@ let stmt d = make d tvoid
 
 let is_l_value env id =  try (Context.find id env; true) with Not_found -> false
 
+
+
 let rec expr env e =
   let e, ty, rt = expr_desc env e.pexpr_loc e.pexpr_desc in
   { expr_desc = e; expr_typ = ty }, rt
+
+and handle env e =  let e,_ = expr env e in e
 
 and expr_desc env loc = function
   | PEskip ->
@@ -154,10 +163,7 @@ and expr_desc env loc = function
 
   | PEcall ({id = "fmt.Print"}, el) -> fmt_used := true;
     let loc = (List.hd el).pexpr_loc in
-    let handle e = 
-      let e,_ = expr env e in e
-    in 
-    let l = List.map handle el in 
+    let l = List.map (handle env) el in 
     (match l with 
       | [{expr_desc = TEcall _}] -> let e = List.hd l in 
         TEprint [e], tvoid, false
@@ -173,20 +179,21 @@ and expr_desc env loc = function
     in
     TEnew ty, Tptr ty, false
 
-  | PEcall ({id="new"}, _) ->
+  | PEcall ({id="new";loc}, _) ->
     error loc "new expects a type"
-  | PEcall ({id;loc}, el) ->
-    if not (Hashtbl.mem funct id) then 
+
+  | PEcall ({id;loc}, el) ->assert false (*
+      if not (Hashtbl.mem funct id) then 
       error loc (sprintf "Unknown function %s" id);
-    let handle e = 
-      let e,_ = expr env e in e
-    in 
-    let l = List.map handle el in 
-    (match l with 
-      | [{expr_desc = TEcall _}] -> let e = List.hd l in 
-        TEprint [e], tvoid, false
+    let l = List.map (handle env) el in
+    (match l with
+      | [{expr_desc = TEcall (f,el2)}] ->
+        if List.length el2 != List.length el then 
+          error loc (sprintf "Output size of %s is not matching %s input size" f.fn_name id);
+
+      | [e] -> TEcall [e], e.expr_typ, false
       | _ -> List.iter (function |{expr_typ = Tmany _} -> error loc "Function call as part of a plotting are not supported" | _ -> ()) l;
-        TEprint l, tvoid, false)
+        TEprint l, tvoid, false)*)
     
   | PEfor (e, b) ->
     let e,_ = expr env e and b,rt = expr env b in
@@ -206,26 +213,36 @@ and expr_desc env loc = function
     TEif(e1,e2,e3), typ, rt2 && rt3
     
   | PEnil ->
-    TEnil, Twild, false
+    TEnil, Tptr (Twild), false
   | PEident {id;loc} ->
-      if id = "_" then
-        error loc ("the _ variable is not to be used");
-      
-    (* TODO *) (try let v = Context.find id env in TEident v, v.v_typ, false
-                with Not_found -> error loc ("unbound variable " ^ id))
+    if id = "_" then
+      error loc ("the _ variable is not to be used");
+    (try let v = Context.find id env in TEident v, v.v_typ, false
+      with Not_found -> error loc ("unbound variable " ^ id))
   | PEdot (e, id) ->
     (* TODO *) assert false
   | PEassign (lvl, el) ->
-    (* TODO *) TEassign ([], []), tvoid, false 
+    if List.length el <> List.length lvl then
+      error loc (sprintf "Expected same size affectation got %d and %d" (List.length lvl) (List.length el));
+    let lvl = List.map (handle env) lvl and el = List.map (handle env) el in
+    let err x y = if not (eq_type x.expr_typ y.expr_typ) then error loc "Expected same type affectation" in
+    List.iter2 err lvl el;
+    TEassign (lvl, el), tvoid, false 
+
   | PEreturn el ->
     (* TODO *) TEreturn [], tvoid, true
   | PEblock el ->
-    (* TODO *) TEblock [], tvoid, false
+    (* TODO *) TEblock [], tvoid, true
   | PEincdec (e, op) ->
-    (* TODO *) assert false
+    let loc = e.pexpr_loc in
+    let e,_ = expr env e in
+    if not (eq_type e.expr_typ Tint) then
+      error loc (sprintf "Expected int, got %s" (tf_typ_to_string e.expr_typ));
+    TEincdec (e,op), Tint, false
+    
+
   | PEvars _ ->
     (* TODO *) assert false 
-  | _ -> assert false
 
 let rec type_type = function
   | PTident {id;loc} when Hashtbl.mem structure id -> Tstruct (Hashtbl.find structure id)
@@ -245,13 +262,17 @@ let rec type_type_struct = function
 let rec type_type_func = function
   | PDfunction {pf_name;pf_params;pf_typ;pf_body;} -> 
     let e, rt = expr Context.create pf_body in
+    let fn_typ = List.map (fun x -> type_type x) pf_typ in
+    if List.length fn_typ = 0 && (not rt || (eq_type e.expr_typ (Tmany[]))) then 
+      TDfunction ({fn_name = pf_name.id; fn_params = List.map (fun x -> let y,z = x in new_var y.id y.loc (type_type z)) pf_params; fn_typ = fn_typ}, e)
+    else begin
     if not rt then
       error pf_name.loc (sprintf "Missing return status in %s" pf_name.id);
-    let fn_typ = List.map (fun x -> type_type x) pf_typ in
     if not (eq_type e.expr_typ (Tmany fn_typ)) then
-      error pf_name.loc (sprintf "Wrong return type in %s, expected %s got %s" pf_name.id (String.concat ", " (List.map (fun x -> pf_typ_to_string x) pf_typ)) (tf_typ_to_string e.expr_typ));
+      error pf_name.loc (sprintf "Wrong return type in %s, expected %s got %s" pf_name.id (pf_list_to_string pf_typ) (tf_typ_to_string e.expr_typ));
     TDfunction ({fn_name = pf_name.id; fn_params = List.map (fun x -> let y,z = x in new_var y.id y.loc (type_type z)) pf_params; fn_typ = fn_typ}, e)
-  | _ -> error dummy_loc "Bad function"
+    end 
+    | _ -> error dummy_loc "Bad function"
 
 
 (* 1. declare structures *)
