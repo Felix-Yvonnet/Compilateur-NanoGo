@@ -182,7 +182,7 @@ and expr_desc env loc = function
   | PEcall ({id="new";loc}, _) ->
     error loc "new expects a type"
 
-  | PEcall ({id;loc}, el) ->assert false (*
+  | PEcall ({id;loc}, el) ->
       if not (Hashtbl.mem funct id) then 
       error loc (sprintf "Unknown function %s" id);
     let l = List.map (handle env) el in
@@ -190,10 +190,10 @@ and expr_desc env loc = function
       | [{expr_desc = TEcall (f,el2)}] ->
         if List.length el2 != List.length el then 
           error loc (sprintf "Output size of %s is not matching %s input size" f.fn_name id);
-
-      | [e] -> TEcall [e], e.expr_typ, false
+        (* vérif type et ajouter *)
+      | [e] -> TEcall (Hashtbl.find funct id, [e]), e.expr_typ, false
       | _ -> List.iter (function |{expr_typ = Tmany _} -> error loc "Function call as part of a plotting are not supported" | _ -> ()) l;
-        TEprint l, tvoid, false)*)
+        TEprint l, tvoid, false)
     
   | PEfor (e, b) ->
     let e,_ = expr env e and b,rt = expr env b in
