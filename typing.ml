@@ -106,11 +106,13 @@ and handle env e =
 
 and expr_desc env loc = function
   | PEskip -> (TEskip, tvoid, false)
+
   | PEconstant c -> (
       match c with
       | Cbool b -> (TEconstant c, Tbool, false)
       | Cint i -> (TEconstant c, Tint, false)
       | Cstring s -> (TEconstant c, Tstring, false))
+
   | PEbinop (op, e1, e2) -> (
       let loc1, loc2 = (e1.pexpr_loc, e2.pexpr_loc) in
       let e1, _ = expr env e1 and e2, _ = expr env e2 in
@@ -143,6 +145,7 @@ and expr_desc env loc = function
               (sprintf " Invalid type for operation, expected bool got %s"
                  (tf_typ_to_string t1));
           (TEbinop (op, e1, e2), Tbool, false))
+
   | PEunop (Uamp, e1) ->
       let loc = e1.pexpr_loc in
       let e1, _ = expr env e1 in
@@ -156,6 +159,7 @@ and expr_desc env loc = function
           "J'vais t'faire courir moi tu vas voir rouquin + ratio + pas l-value \
            + pas évalué";
       (TEunop (Uamp, e1), Tptr e1.expr_typ, false)
+
   | PEunop (Uneg, e1) ->
       let loc = e1.pexpr_loc in
       let e1, _ = expr env e1 in
@@ -163,6 +167,7 @@ and expr_desc env loc = function
         error loc
           (sprintf "Expected int but got %s" (tf_typ_to_string e1.expr_typ));
       (TEunop (Uneg, e1), Tint, false)
+
   | PEunop (Unot, e1) ->
       let loc = e1.pexpr_loc in
       let e1, _ = expr env e1 in
@@ -170,6 +175,7 @@ and expr_desc env loc = function
         error loc
           (sprintf "Expected bool but got %s" (tf_typ_to_string e1.expr_typ));
       (TEunop (Unot, e1), Tbool, false)
+
   | PEunop (Ustar, e1) ->
       let loc = e1.pexpr_loc in
       let e1, _ = expr env e1 in
@@ -183,6 +189,7 @@ and expr_desc env loc = function
               (sprintf "Expected pointers but got %s" (tf_typ_to_string typ))
       in
       (TEunop (Ustar, e1), ty, false)
+
   | PEcall ({ id = "fmt.Print" }, el) -> (
       fmt_used := true;
       let loc = (List.hd el).pexpr_loc in
@@ -200,6 +207,7 @@ and expr_desc env loc = function
               | _ -> ())
             l;
           (TEprint l, tvoid, false))
+
   | PEcall ({ id = "new" }, [ { pexpr_desc = PEident { id; loc } } ]) ->
       let ty =
         match id with
@@ -212,7 +220,9 @@ and expr_desc env loc = function
             Tstruct (Hashtbl.find structure id)
       in
       (TEnew ty, Tptr ty, false)
+
   | PEcall ({ id = "new"; loc }, _) -> error loc "new expects a type"
+
   | PEcall ({ id; loc }, el) -> (
       if not (Hashtbl.mem funct id) then
         error loc (sprintf "Unknown function %s" id);
@@ -248,6 +258,7 @@ and expr_desc env loc = function
           if List.length f.fn_typ = 1 then
             (TEcall (f, el), List.hd f.fn_typ, false)
           else (TEcall (f, el), Tmany f.fn_typ, false))
+
   | PEfor (e, b) ->
       let e, _ = expr env e and b, rt = expr env b in
       if not (eq_type e.expr_typ Tbool) then
@@ -255,6 +266,7 @@ and expr_desc env loc = function
           (sprintf "Expected boolean condition in the loop, got %s"
              (tf_typ_to_string e.expr_typ));
       (TEfor (e, b), b.expr_typ, rt)
+
   | PEif (e1, e2, e3) ->
       let loc = e1.pexpr_loc in
       let e1, _ = expr env e1
@@ -277,20 +289,36 @@ and expr_desc env loc = function
       (TEif (e1, e2, e3), typ, rt2 && rt3)
   | PEnil -> (TEnil, Tptr Twild, false)
   | PEident { id; loc } -> (
-      if id = "_" then error loc "the _ variable is not to be used";
+      if id = "_" then error loc "the variable \"_\" is not meant to be used";
       try
         let v = Context.find id env in
         (TEident v, v.v_typ, false)
       with Not_found -> error loc ("unbound variable " ^ id))
+
   | PEdot (e, id) -> 
     assert false
+
   | PEassign (lvl, el) ->
     let pos = (List.hd lvl).pexpr_loc in
+    let lvl = List.map (handle env) lvl and el = List.map (handle env) el in
+    List.iter (fun x -> match x.expr_desc with | TEident {v_name;v_loc} -> if not (is_l_value env v_name) then error loc (sprintf "Expected l-value") | _ -> error pos (sprintf "Expected l-value got %s" (tf_typ_to_string x.expr_typ) )) lvl;
+    (match el with
+      | [{ expr_desc = TEcall (f, el2) }] -> 
+        if List.length f.fn_typ <> List.length lvl then
+          error pos (sprintf "Extraction expects %d val but got %d" (List.length lvl) (List.length f.fn_typ));
+        List.iter2 (fun ex ex2 -> if not (eq_type ex.expr_typ ex2) then error pos (sprintf "Expected %s but got type %s" ( String.concat ", " (List.map (fun x -> tf_typ_to_string x.expr_typ) lvl)) (tf_typ_to_string (Tmany f.fn_typ)))) lvl f.fn_typ;
+        TEassign (lvl, el), tvoid, false
+      | el -> 
+        if List.length el <> List.length lvl then
+          error pos (sprintf "Extraction expects %d val but got %d" (List.length lvl) (List.length el));
+        List.iter2 (fun ex ex2 -> if not (eq_type ex.expr_typ ex2.expr_typ) then error pos (sprintf "Expected %s but got type %s" ( String.concat ", " (List.map (fun x -> tf_typ_to_string x.expr_typ) lvl)) ( String.concat ", " (List.map (fun x -> tf_typ_to_string x.expr_typ) el)) )) lvl el;
+        List.iter (fun x -> match x with |Tmany _ -> error pos "Unexpected function extraction in assignation" | _ -> ()) lvl;
+        TEassign (lvl, el), tvoid, false
+      );
       if List.length el <> List.length lvl then
         error pos
           (sprintf "Expected same size affectation got %d and %d"
              (List.length lvl) (List.length el));
-      let lvl = List.map (handle env) lvl and el = List.map (handle env) el in
       let err x y =
         if not (eq_type x.expr_typ y.expr_typ) then
           error pos "Expected same type affectation"
@@ -298,14 +326,30 @@ and expr_desc env loc = function
       List.iter2 err lvl el;
       List.iter (fun x -> match x.expr_desc with | TEident {v_name;v_loc} -> if not (is_l_value env v_name) then error loc (sprintf "Expected l-value") | _ -> error pos (sprintf "Expected l-value got %s" (tf_typ_to_string x.expr_typ) )) lvl;
       TEassign (lvl, el), tvoid, false
-  | PEreturn el -> (* TODO *) (TEreturn [], tvoid, true)
+
+  | PEreturn el -> 
+    let pos = (List.hd el).pexpr_loc in
+    let el = List.map (fun x -> let e,_ = expr env x in e) el in
+    (match el with
+      | [{ expr_desc = TEcall (f, el2) }] -> 
+        if List.length f.fn_typ = 1 then
+          TEreturn el, tvoid, true
+        else 
+          TEreturn el, tvoid, true
+      | el -> 
+        List.iter (fun x -> match x.expr_typ with | Tmany _ -> error pos "Unexpected function extraction in assignation" | _ -> ()) el;
+        TEreturn el,tvoid, true
+    )
+
   | PEblock el -> (* TODO *) (TEblock [], tvoid, true)
+
   | PEincdec (e, op) ->
       let loc = e.pexpr_loc in
       let e, _ = expr env e in
       if not (eq_type e.expr_typ Tint) then
         error loc (sprintf "Expected int, got %s" (tf_typ_to_string e.expr_typ));
       (TEincdec (e, op), Tint, false)
+      
   | PEvars _ -> (* TODO *) assert false
 
 let rec type_type = function
