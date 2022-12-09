@@ -53,6 +53,7 @@ end
 let fmt_imported = ref false
 let fmt_used = ref false
 let found_main = ref false
+let func_type = ref []
 let structure : (string, structure) Hashtbl.t = Hashtbl.create 10
 
 (* TODO environnement pour les fonctions *)
@@ -64,6 +65,8 @@ let rec eq_type ty1 ty2 =
   | Tint, Tint | Tbool, Tbool | Tstring, Tstring -> true
   | Tstruct s1, Tstruct s2 -> s1 == s2
   | Tptr ty1, Tptr ty2 -> eq_type ty1 ty2
+  | Tmany x, Tmany y -> List.mem false (List.map2 eq_type x y)
+  | Twild, Twild -> true
   | _ -> false
 (* TODO autres types *)
 
@@ -302,17 +305,7 @@ and expr_desc env loc = function
         error loc
           (sprintf "Expected boolean condition, got %s"
              (tf_typ_to_string e1.expr_typ));
-      let typ =
-        if rt2 && rt3 then (
-          if not (eq_type e2.expr_typ e3.expr_typ) then
-            error loc
-              (sprintf "Return types are not compatible, got %s and %s"
-                 (tf_typ_to_string e2.expr_typ)
-                 (tf_typ_to_string e3.expr_typ));
-          e2.expr_typ)
-        else tvoid
-      in
-      (TEif (e1, e2, e3), typ, rt2 && rt3)
+      (TEif (e1, e2, e3), tvoid, rt2 && rt3)
   | PEnil -> (TEnil, Tptr Twild, false)
   | PEident { id; loc } -> (
       if id = "_" then error loc "the variable \"_\" is not meant to be used";
@@ -371,12 +364,18 @@ and expr_desc env loc = function
     let el = List.map (fun x -> let e,_ = expr env x in e) el in
     (match el with
       | [{ expr_desc = TEcall (f, el2) }] -> 
-        if List.length f.fn_typ = 1 then
-          TEreturn el, tvoid, true
+        if List.length f.fn_typ = 1 then(
+          if not (eq_type (Tmany !func_type) (Tmany f.fn_typ)) then
+            error pos (sprintf "Wrong type, expected %s got %s" (tf_typ_to_string (Tmany !func_type))  (tf_typ_to_string (Tmany f.fn_typ)));
+          TEreturn el, tvoid, true)
         else 
           TEreturn el, tvoid, true
       | el -> 
-        List.iter (fun x -> match x.expr_typ with | Tmany _ -> error pos "Unexpected function extraction in assignation" | _ -> ()) el;
+        let tyl = List.map (fun x -> x.expr_typ) el in
+        if List.mem false (List.map2 eq_type !func_type tyl) then
+          error pos (sprintf "Wrong type, expected %s got %s" (tf_typ_to_string (Tmany !func_type))  (tf_typ_to_string (Tmany tyl)));
+
+        List.iter (fun x -> match x with | Tmany _ -> error pos "Unexpected function extraction in assignation" | _ -> ()) tyl;
         TEreturn el,tvoid, true
     )
 
@@ -391,7 +390,7 @@ and expr_desc env loc = function
         in 
         (match exp.expr_desc with
           | TEvars (var_list,_) -> (let TEblock expredesc2,_, rt2 = aux q (add_vars var_list env) in
-            TEblock(exp::expredesc2), tvoid, rt2)
+            TEblock(exp::expredesc2), tvoid, rt || rt2)
           | _ -> let TEblock (exp2), _, rt2 = aux q env in
             TEblock(exp::exp2), tvoid, rt || rt2)
     in aux el env
@@ -438,8 +437,8 @@ and expr_desc env loc = function
       )
     end
 
-
-let rec type_type_struct = function
+(* To change from not typed objects to typed objects *)
+let type_type_struct = function
   | PDstruct { ps_name = { id = name; loc = pos }; ps_fields = pfl } ->
       let hash_type : (string, field) Hashtbl.t = Hashtbl.create 0 in
       let _ =
@@ -459,11 +458,12 @@ let rec type_type_struct = function
         }
   | _ -> error dummy_loc "Bad type"
 
-let type_type_func = function
+  let type_type_func = function
   | PDfunction { pf_name; pf_params; pf_typ; pf_body } ->
       let e = Context.create in
       let fn_params = List.map (fun x -> let y, z = x in new_var y.id y.loc (type_type z)) pf_params in
       let fn_typ = List.map (fun x -> type_type x) pf_typ in
+      func_type :=  fn_typ;
       let e = List.fold_left (fun env var -> fst( Context.var var.v_name var.v_loc var.v_typ env)) e fn_params in
       let e, rt = expr e pf_body in
       if List.length fn_typ = 0 && ((not rt) || eq_type e.expr_typ (Tmany []))
@@ -483,11 +483,6 @@ let type_type_func = function
       else (
         if not rt then
           error pf_name.loc (sprintf "Missing return status in %s" pf_name.id);
-        if not (eq_type e.expr_typ (Tmany fn_typ)) then
-          error pf_name.loc
-            (sprintf "Wrong return type in %s, expected %s got %s" pf_name.id
-               (pf_list_to_string pf_typ)
-               (tf_typ_to_string e.expr_typ));
         TDfunction
           ( {
               fn_name = pf_name.id;
@@ -496,7 +491,7 @@ let type_type_func = function
                   (fun x ->
                     let y, z = x in
                     new_var y.id y.loc (type_type z))
-                  pf_params;
+                  pf_params; 
               fn_typ;
             },
             e ))
@@ -568,6 +563,8 @@ let phase2 = function
         error loc (sprintf "In %s structure, %s already defined" id name);
       if not is_good then
         error pos (sprintf "In structure %s, type %s not well defined" id name);
+      List.iter (fun (x,y) -> match y with | PTident {id = name} when name = id -> error loc "Recursive function definition is forbidden" |_ -> ()) pfield_list;
+
       let stru =
         type_type_struct
           (PDstruct { ps_name = { id; loc }; ps_fields = pfield_list })

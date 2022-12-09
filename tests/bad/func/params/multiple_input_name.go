@@ -12,6 +12,6 @@ func main () {
 
 /*
 == Expected compiler output ==
-File "./tests/bad/func/multiple_input_name.go", line 3, characters 12-13:
+File "./tests/bad/func/params/multiple_input_name.go", line 3, characters 12-13:
 error: In function fact, input type n appears multiple times
 */
