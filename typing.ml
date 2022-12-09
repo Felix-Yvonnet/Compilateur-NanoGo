@@ -32,18 +32,18 @@ module Context = struct
   let create = M.empty
   let find = M.find
   let add env v = M.add v.v_name v env
-  let all_vars = ref []
+  let all_vars : (string,var) Hashtbl.t = Hashtbl.create 10
 
   let check_unused () =
     let check v =
-      if v.v_name <> "_" && (* TODO used *) true then
+      if v.v_name <> "_" && not v.v_used then
         error v.v_loc "unused variable"
     in
-    List.iter check !all_vars
+    Hashtbl.iter (fun id vars -> check vars) all_vars
 
   let var x loc ?used ty env =
     let v = new_var x loc ?used ty in
-    all_vars := v :: !all_vars;
+    Hashtbl.add all_vars x v;
     (add env v, v)
 
   (* TODO type () et vecteur de types *)
@@ -90,19 +90,45 @@ let tvoid = Tmany []
 let make d ty = { expr_desc = d; expr_typ = ty }
 let stmt d = make d tvoid
 
-let is_l_value env id =
-  try
-    Context.find id env;
+let rec is_l_value env exp = match exp with
+  | TEident var -> (try
+    let _ = Context.find var.v_name env in ()
+    with Not_found -> error var.v_loc (sprintf "%s is expected to be a variable" var.v_name));
     true
-  with Not_found -> false
+
+  | TEdot({expr_desc = (TEident v); expr_typ = typ},f) -> 
+    let _ = is_l_value env (TEident v) in true
+    
+  | TEunop(Ustar, e) -> 
+    if e.expr_desc = TEnil then false
+    else begin
+      let b = (match e.expr_typ with | Tptr _ -> true | _ -> false) in
+      let b3 = (match e.expr_desc with | TEident {v_name = "_"} -> false | _ -> true) in
+      let b2 = is_l_value env e.expr_desc in b && b2 && b3
+    end 
+  | _ -> false
+
+  let rec well_defined_t typ = match typ with
+  | Tint | Tbool | Tstring -> true
+  | Tstruct s -> Hashtbl.mem structure s.s_name
+  | Tptr s -> well_defined_t s
+  | Twild -> true
+  | Tmany sl -> List.fold_left (fun x y -> x && well_defined_t y) true sl
+
+  let rec type_type = function
+  | PTident { id; loc } when Hashtbl.mem structure id ->
+      Tstruct (Hashtbl.find structure id)
+  | PTident { id = "int" } -> Tint
+  | PTident { id = "bool" } -> Tbool
+  | PTident { id = "string" } -> Tstring
+  | PTptr ty -> Tptr (type_type ty)
+  | PTident { id; loc } -> error loc (sprintf "Structure %s not defined" id)
 
 let rec expr env e =
   let e, ty, rt = expr_desc env e.pexpr_loc e.pexpr_desc in
   ({ expr_desc = e; expr_typ = ty }, rt)
 
-and handle env e =
-  let e, _ = expr env e in
-  e
+and recure env e = fst (expr env e)
 
 and expr_desc env loc = function
   | PEskip -> (TEskip, tvoid, false)
@@ -120,7 +146,7 @@ and expr_desc env loc = function
       if not (eq_type t1 t2) then
         error loc2
           (sprintf
-             "Comparison between different types not supported, got %s and %s"
+             "Operations between different types not supported, got %s and %s"
              (tf_typ_to_string t1) (tf_typ_to_string t2));
       match op with
       | Beq | Bne ->
@@ -151,7 +177,7 @@ and expr_desc env loc = function
       let e1, _ = expr env e1 in
       let value =
         match e1.expr_desc with
-        | TEident { v_name } -> is_l_value env v_name
+        | TEident v -> is_l_value env (TEident v)
         | _ -> false
       in
       if not value then
@@ -193,7 +219,7 @@ and expr_desc env loc = function
   | PEcall ({ id = "fmt.Print" }, el) -> (
       fmt_used := true;
       let loc = (List.hd el).pexpr_loc in
-      let l = List.map (handle env) el in
+      let l = List.map (recure env) el in
       match l with
       | [ { expr_desc = TEcall _ } ] ->
           let e = List.hd l in
@@ -226,7 +252,7 @@ and expr_desc env loc = function
   | PEcall ({ id; loc }, el) -> (
       if not (Hashtbl.mem funct id) then
         error loc (sprintf "Unknown function %s" id);
-      let el = List.map (handle env) el in
+      let el = List.map (recure env) el in
       let f = Hashtbl.find funct id in
       match el with
       | [ { expr_desc = TEcall (g, el2) } ] when List.length f.fn_params > 1 ->
@@ -292,16 +318,40 @@ and expr_desc env loc = function
       if id = "_" then error loc "the variable \"_\" is not meant to be used";
       try
         let v = Context.find id env in
-        (TEident v, v.v_typ, false)
+        (Hashtbl.find Context.all_vars id).v_used <- true;
+        TEident v, v.v_typ, false
       with Not_found -> error loc ("unbound variable " ^ id))
 
-  | PEdot (e, id) -> 
-    assert false
+  | PEdot (e, {id;loc}) -> 
+    let pos = e.pexpr_loc in
+    let e,_ = expr env e in
+    (match e.expr_typ with
+      | Tptr (Tstruct s) -> 
+        if e.expr_desc = TEnil then
+          error pos "nil doesn't have dotted value";
+        if not (is_l_value env e.expr_desc) || (match e.expr_desc with | TEident {v_name} -> v_name = "_" | _ -> true) then
+          error pos "Not well defined mate";
+        if not (Hashtbl.mem structure s.s_name) then
+          error loc (sprintf "Structure %s not defined" s.s_name);
+        if not (Hashtbl.mem s.s_fields id) then 
+          error loc (sprintf "Fields %s do not belong to the structure %s" id s.s_name);
+        TEdot(e,{f_name = s.s_name; f_typ = Tstruct s; f_ofs = 0}), (Hashtbl.find s.s_fields id).f_typ , false
 
-  | PEassign (lvl, el) ->
+      | Tstruct s -> 
+        if not (is_l_value env e.expr_desc) || (match e.expr_desc with | TEident {v_name} -> v_name = "_" | _ -> true) then
+          error pos "Not well defined mate no2";
+        if not (Hashtbl.mem structure s.s_name) then
+          error loc (sprintf "Structure %s not defined" s.s_name);
+        if not (Hashtbl.mem s.s_fields id) then 
+          error loc (sprintf "Fields %s do not belong to the structure %s" id s.s_name);
+        TEdot(e,{f_name = s.s_name; f_typ = Tstruct s; f_ofs = 0}), (Hashtbl.find s.s_fields id).f_typ , false
+
+      | _ -> error pos (sprintf "No attribute %s" id))
+
+  | PEassign (lvl, el) -> 
     let pos = (List.hd lvl).pexpr_loc in
-    let lvl = List.map (handle env) lvl and el = List.map (handle env) el in
-    List.iter (fun x -> match x.expr_desc with | TEident {v_name;v_loc} -> if not (is_l_value env v_name) then error loc (sprintf "Expected l-value") | _ -> error pos (sprintf "Expected l-value got %s" (tf_typ_to_string x.expr_typ) )) lvl;
+    let lvl = List.map (recure env) lvl and el = List.map (recure env) el in
+    List.iter (fun x -> match x.expr_desc with | TEident v -> if not (is_l_value env (TEident v)) then error v.v_loc (sprintf "Expected l-value") | TEdot (e,f) -> if not (is_l_value env e.expr_desc) then error pos (sprintf "Expected l-value") | _ -> error pos (sprintf "Expected l-value got %s" (tf_typ_to_string x.expr_typ) )) lvl;
     (match el with
       | [{ expr_desc = TEcall (f, el2) }] -> 
         if List.length f.fn_typ <> List.length lvl then
@@ -312,20 +362,9 @@ and expr_desc env loc = function
         if List.length el <> List.length lvl then
           error pos (sprintf "Extraction expects %d val but got %d" (List.length lvl) (List.length el));
         List.iter2 (fun ex ex2 -> if not (eq_type ex.expr_typ ex2.expr_typ) then error pos (sprintf "Expected %s but got type %s" ( String.concat ", " (List.map (fun x -> tf_typ_to_string x.expr_typ) lvl)) ( String.concat ", " (List.map (fun x -> tf_typ_to_string x.expr_typ) el)) )) lvl el;
-        List.iter (fun x -> match x with |Tmany _ -> error pos "Unexpected function extraction in assignation" | _ -> ()) lvl;
+        List.iter (fun x -> match x.expr_typ with |Tmany _ -> error pos "Unexpected function extraction in assignation" | _ -> ()) lvl;
         TEassign (lvl, el), tvoid, false
-      );
-      if List.length el <> List.length lvl then
-        error pos
-          (sprintf "Expected same size affectation got %d and %d"
-             (List.length lvl) (List.length el));
-      let err x y =
-        if not (eq_type x.expr_typ y.expr_typ) then
-          error pos "Expected same type affectation"
-      in
-      List.iter2 err lvl el;
-      List.iter (fun x -> match x.expr_desc with | TEident {v_name;v_loc} -> if not (is_l_value env v_name) then error loc (sprintf "Expected l-value") | _ -> error pos (sprintf "Expected l-value got %s" (tf_typ_to_string x.expr_typ) )) lvl;
-      TEassign (lvl, el), tvoid, false
+      )
 
   | PEreturn el -> 
     let pos = (List.hd el).pexpr_loc in
@@ -341,7 +380,21 @@ and expr_desc env loc = function
         TEreturn el,tvoid, true
     )
 
-  | PEblock el -> (* TODO *) (TEblock [], tvoid, true)
+  | PEblock el -> 
+
+    let rec aux liste env = match liste with
+      | [] -> TEblock [], tvoid, false
+      | t::q -> let exp, rt = expr env t in
+        let rec add_vars vl env = match vl with
+          | [] -> env
+          | v::q -> add_vars q (Context.add env v)
+        in 
+        (match exp.expr_desc with
+          | TEvars (var_list,_) -> (let TEblock expredesc2,_, rt2 = aux q (add_vars var_list env) in
+            TEblock(exp::expredesc2), tvoid, rt2)
+          | _ -> let TEblock (exp2), _, rt2 = aux q env in
+            TEblock(exp::exp2), tvoid, rt || rt2)
+    in aux el env
 
   | PEincdec (e, op) ->
       let loc = e.pexpr_loc in
@@ -350,16 +403,41 @@ and expr_desc env loc = function
         error loc (sprintf "Expected int, got %s" (tf_typ_to_string e.expr_typ));
       (TEincdec (e, op), Tint, false)
       
-  | PEvars _ -> (* TODO *) assert false
+  | PEvars (il, ptp, pel) ->
+  let pos = (List.hd il).loc in 
+    let el = List.map (recure env) pel in
+    let tl = match el with
+      | [] -> []
+      | [{expr_desc = TEcall(f,el)}]-> 
+        if List.length f.fn_typ <> List.length il then
+          error pos (sprintf "Assignation expect %d arguments but got %d" (List.length il) (List.length f.fn_typ));
+        f.fn_typ
+      | _ -> 
+        List.iter (fun x -> match x.expr_typ with | Tmany _ -> error pos "Unexpected tuplish function call in assignment" | _ -> ()) el;
+        List.map (fun x -> x.expr_typ) el
+    in
+    if List.length tl = 0 then begin
+      let tau = match ptp with | None -> error pos "No type definition for assignment" | Some ty -> type_type ty in
+      let vl = List.map (fun x -> snd (Context.var x.id x.loc tau env)) il in
+      TEvars (vl, el), tvoid, false
+    end
+    else begin
+      let tau,b = match ptp with | None ->  Twild, false | Some ty -> type_type ty, true in
+      if b then (
+        if List.length tl <> List.length il then
+          error pos (sprintf "Assignation expect %d arguments but got %d" (List.length il) (List.length tl));
+        List.iter (fun x -> if not(eq_type x tau) then error pos (sprintf "Not same type, expected %s got %s" (tf_typ_to_string x) (tf_typ_to_string tau))) tl;
+        TEvars(List.map (fun x -> snd (Context.var x.id x.loc tau env) ) il,el), tvoid, false
 
-let rec type_type = function
-  | PTident { id; loc } when Hashtbl.mem structure id ->
-      Tstruct (Hashtbl.find structure id)
-  | PTident { id = "int" } -> Tint
-  | PTident { id = "bool" } -> Tbool
-  | PTident { id = "string" } -> Tstring
-  | PTptr ty -> Tptr (type_type ty)
-  | PTident { id; loc } -> error loc (sprintf "Structure %s not defined" id)
+      )
+      else (
+        if List.length tl <> List.length il then
+          error pos (sprintf "Assignation expect %d arguments but got %d" (List.length il) (List.length tl));
+        TEvars(List.map2 (fun x y -> snd (Context.var x.id x.loc y env) ) il tl,el), tvoid, false
+
+      )
+    end
+
 
 let rec type_type_struct = function
   | PDstruct { ps_name = { id = name; loc = pos }; ps_fields = pfl } ->
@@ -381,10 +459,13 @@ let rec type_type_struct = function
         }
   | _ -> error dummy_loc "Bad type"
 
-let rec type_type_func = function
+let type_type_func = function
   | PDfunction { pf_name; pf_params; pf_typ; pf_body } ->
-      let e, rt = expr Context.create pf_body in
+      let e = Context.create in
+      let fn_params = List.map (fun x -> let y, z = x in new_var y.id y.loc (type_type z)) pf_params in
       let fn_typ = List.map (fun x -> type_type x) pf_typ in
+      let e = List.fold_left (fun env var -> fst( Context.var var.v_name var.v_loc var.v_typ env)) e fn_params in
+      let e, rt = expr e pf_body in
       if List.length fn_typ = 0 && ((not rt) || eq_type e.expr_typ (Tmany []))
       then
         TDfunction
@@ -398,7 +479,7 @@ let rec type_type_func = function
                   pf_params;
               fn_typ;
             },
-            e )
+          e )
       else (
         if not rt then
           error pf_name.loc (sprintf "Missing return status in %s" pf_name.id);
@@ -419,7 +500,7 @@ let rec type_type_func = function
               fn_typ;
             },
             e ))
-  | _ -> error dummy_loc "Bad function"
+  | _ -> error dummy_loc "Bad function definition"
 
 (* 1. declare structures *)
 let phase1 = function
@@ -456,8 +537,7 @@ let rec well_defined_struct_list = function
 
 let phase2 = function
   (* vérifier la présence de la fonction main *)
-  | PDfunction { pf_name = { id = "main"; loc }; pf_params = []; pf_typ = [] }
-    ->
+  | PDfunction { pf_name = { id = "main"; loc }; pf_params = []; pf_typ = [] } ->
       if !found_main then error loc (sprintf "Function main already defined");
       Hashtbl.add funct "main" { fn_name = "main"; fn_params = []; fn_typ = [] };
       found_main := true
@@ -478,7 +558,7 @@ let phase2 = function
           (sprintf "In function %s, output type %s not well defined" id
              (from_ptyp_to_id
                 (List.find (fun x -> not (well_defined_type x)) pft)));
-      Hashtbl.add funct id { fn_name = id; fn_params = []; fn_typ = [] }
+      Hashtbl.add funct id { fn_name = id; fn_params = []; fn_typ = List.map type_type pft }
   (* gère les structures *)
   | PDstruct { ps_name = { id; loc }; ps_fields = pfield_list } -> (
       let is_good, no_repeat, pos, name, _ =
@@ -504,13 +584,11 @@ let sizeof = function
   | _ -> (* TODO *) assert false
 
 let phase3 = function
-  | PDfunction { pf_name = { id; loc }; pf_params; pf_body = e; pf_typ = tyl }
-    ->
+  | PDfunction { pf_name = { id; loc }; pf_params; pf_body = e; pf_typ = tyl } ->
       type_type_func
         (PDfunction
            { pf_name = { id; loc }; pf_params; pf_body = e; pf_typ = tyl })
   | PDstruct { ps_name = { id } } ->
-      (* TODO *)
       let s = { s_name = id; s_fields = Hashtbl.create 5; s_size = 0 } in
       TDstruct s
 

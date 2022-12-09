@@ -10,15 +10,13 @@ func main () {
 	var t T
 	t.a = 1
 	t.b = 2
-	fmt.Print(t.a, t.b, '\n');
+	fmt.Print(t.a, t.b, "\n");
 	foo(t)
-	fmt.Print(t.a, t.b, '\n');
+	fmt.Print(t.a, t.b, "\n");
 	bar(t)
-	fmt.Print(t.a, t.b, '\n');
-	fmt.Print("5" + 37);
-
+	fmt.Print(t.a, t.b, "\n");
+}
 
 /*
 == Expected compiler output ==
-
 */
