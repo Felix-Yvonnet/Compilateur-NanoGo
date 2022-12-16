@@ -1,6 +1,7 @@
-_build/
+# Proper to this project
 ngoc
-
+*.png
+*.dot
 
 *.annot
 *.cmo

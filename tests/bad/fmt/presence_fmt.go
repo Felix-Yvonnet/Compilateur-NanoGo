@@ -12,6 +12,6 @@ func main () {
 
 /*
 == Expected compiler output ==
-File "./tests/bad/presence_fmt.go", line 0, characters -1--1:
+File "./tests/bad/fmt/presence_fmt.go", line 0, characters -1--1:
 error: fmt imported but not used
 */

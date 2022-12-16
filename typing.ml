@@ -532,7 +532,11 @@ let rec well_defined_struct_list = function
 
 let phase2 = function
   (* vérifier la présence de la fonction main *)
-  | PDfunction { pf_name = { id = "main"; loc }; pf_params = []; pf_typ = [] } ->
+  | PDfunction { pf_name = { id = "main"; loc }; pf_params = pfp; pf_typ = pft } ->
+      if List.length pfp <> 0 then
+        error loc (sprintf "main doesn't expect arguments");
+        if List.length pft <> 0 then
+          error loc "main doesn't expect output types";
       if !found_main then error loc (sprintf "Function main already defined");
       Hashtbl.add funct "main" { fn_name = "main"; fn_params = []; fn_typ = [] };
       found_main := true
