@@ -2,6 +2,7 @@
 ngoc
 *.png
 *.dot
+.vscode/
 
 *.annot
 *.cmo

@@ -372,6 +372,8 @@ and expr_desc env loc = function
           TEreturn el, tvoid, true
       | el -> 
         let tyl = List.map (fun x -> x.expr_typ) el in
+        if List.length !func_type <> List.length tyl then
+          error pos (sprintf "Function expect %d outputs but got %d" (List.length !func_type) (List.length tyl));
         if List.mem false (List.map2 eq_type !func_type tyl) then
           error pos (sprintf "Wrong type, expected %s got %s" (tf_typ_to_string (Tmany !func_type))  (tf_typ_to_string (Tmany tyl)));
 
@@ -567,7 +569,7 @@ let phase2 = function
         error loc (sprintf "In %s structure, %s already defined" id name);
       if not is_good then
         error pos (sprintf "In structure %s, type %s not well defined" id name);
-      List.iter (fun (x,y) -> match y with | PTident {id = name} when name = id -> error loc "Recursive function definition is forbidden" |_ -> ()) pfield_list;
+      List.iter (fun (x,y) -> match y with | PTident {id = name} when name = id -> error loc "Recursive structure definition is forbidden" |_ -> ()) pfield_list;
 
       let stru =
         type_type_struct

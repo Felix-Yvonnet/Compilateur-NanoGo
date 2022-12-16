@@ -83,6 +83,7 @@ let rec expr env e = match e.expr_desc with
   | TEconstant (Cstring s) ->
     (* TODO code pour constante string *) assert false 
   | TEbinop (Band, e1, e2) ->
+    
     (* TODO code pour ET logique lazy *) assert false 
   | TEbinop (Bor, e1, e2) ->
     (* TODO code pour OU logique lazy *) assert false 
