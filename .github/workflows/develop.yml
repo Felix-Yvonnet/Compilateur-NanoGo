@@ -22,7 +22,7 @@ jobs:
       - name: Format code
         run: |
           # Find all modified OCaml files in the push
-          MODIFIED_OCAML_FILES=$(git diff --name-only HEAD HEAD~1 -- '*.ml' '*.mli')
+          MODIFIED_OCAML_FILES=$(git diff --name-only HEAD HEAD --diff-filter=M -- '*.ml' '*.mli')
           # Format each modified OCaml file
           for file in $MODIFIED_OCAML_FILES; do
             ocamlformat -i "$file"
