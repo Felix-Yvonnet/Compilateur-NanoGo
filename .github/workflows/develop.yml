@@ -36,7 +36,7 @@ jobs:
       - name: Build dune
         run: opam install dune
       - name: Add dependencies
-        run: opam depext dune
+        run: opam depext dune --yes
       - name: Update Path
         run: eval $(opam env)
       - name: Build project
