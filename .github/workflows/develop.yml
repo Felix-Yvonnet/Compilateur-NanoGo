@@ -33,5 +33,7 @@ jobs:
           if [ $? -ne 0 ] ; then
             exit 1
           fi
+      - name: Run make
+        run: make
       - name: Run tests
         run: ./tests/launch.sh
