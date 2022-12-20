@@ -11,9 +11,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ocaml opam
-      - name: Install ocp-indent
+      - name: Initialize opam and set OCaml version
         run: |
           opam init --bare
+          opam switch create 4.09.1
+          eval $(opam env)
+      - name: Install ocp-indent
+        run: |
           opam install ocp-indent
       - name: Format code
         run: ocp-indent -i path/to/ocaml/file
