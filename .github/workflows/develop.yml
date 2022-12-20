@@ -33,7 +33,9 @@ jobs:
           if [ $? -ne 0 ] ; then
             exit 1
           fi
+      - name: Build dune
+        run: opam install dune
       - name: Build project
-        run: dune build @all
+        run: dune build 
       - name: Run tests
         run: ./tests/launch.sh
