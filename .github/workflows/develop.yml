@@ -18,7 +18,7 @@ jobs:
           eval $(opam env)
       - name: Install ocp-indent
         run: |
-          opam install ocp-indent
+          opam install --yes ocp-indent
       - name: Format code
         run: ocp-indent -i path/to/ocaml/file
       - name: Check formatting
