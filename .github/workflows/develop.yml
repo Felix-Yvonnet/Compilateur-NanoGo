@@ -35,6 +35,8 @@ jobs:
           fi
       - name: Build dune
         run: opam install dune
+      - name: Update Path
+        run: eval $(opam env)
       - name: Build project
         run: dune build 
       - name: Run tests
