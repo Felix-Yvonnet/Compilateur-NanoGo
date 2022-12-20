@@ -16,11 +16,17 @@ jobs:
           opam init --bare
           opam switch create 4.09.1
           eval $(opam env)
-      - name: Install ocp-indent
+      - name: Install ocamlformat
         run: |
-          opam install --yes ocp-indent
+          opam install --yes ocamlformat
       - name: Format code
-        run: ocp-indent -i path/to/ocaml/file
+        run: |
+          # Find all modified OCaml files in the push
+          MODIFIED_OCAML_FILES=$(git diff --name-only HEAD HEAD~1 -- '*.ml' '*.mli')
+          # Format each modified OCaml file
+          for file in $MODIFIED_OCAML_FILES; do
+            ocamlformat -i "$file"
+          done
       - name: Check formatting
         run: |
           git diff --exit-code
