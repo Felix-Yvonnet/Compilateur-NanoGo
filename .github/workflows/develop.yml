@@ -16,9 +16,9 @@ jobs:
           opam init --bare
           opam switch create 4.09.1
           eval $(opam env)
-      - name: Install ocamlformat
+      - name: Install dependencies
         run: |
-          opam install --yes ocamlformat
+          opam install --yes ocamlformat dune
       - name: Format code
         run: |
           # Find all modified OCaml files in the push
@@ -33,7 +33,7 @@ jobs:
           if [ $? -ne 0 ] ; then
             exit 1
           fi
-      - name: Run make
-        run: make
+      - name: Build project
+        run: dune build @all
       - name: Run tests
         run: ./tests/launch.sh
