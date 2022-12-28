@@ -81,28 +81,88 @@ let rec expr env e = match e.expr_desc with
   | TEnil ->
     xorq (reg rdi) (reg rdi)
   | TEconstant (Cstring s) ->
-    (* TODO code pour constante string *) assert false 
+    let l = alloc_string s in
+    movq (ilab ("$"^l)) (reg rdi) ++ call "strdup"
   | TEbinop (Band, e1, e2) ->
-    
-    (* TODO code pour ET logique lazy *) assert false 
+    let l_true = new_label () and l_end = new_label () in
+    compile_bool (fun l -> expr env e1 ++ jmp l_true) ++
+    jmp l_end ++
+    label l_true ++
+    expr env e2 ++
+    label l_end
   | TEbinop (Bor, e1, e2) ->
-    (* TODO code pour OU logique lazy *) assert false 
+    let l_end = new_label () in
+    compile_bool (fun l -> expr env e1 ++ jmp l_end) ++
+    expr env e2 ++
+    label l_end
   | TEbinop (Blt | Ble | Bgt | Bge as op, e1, e2) ->
-    (* TODO code pour comparaison ints *) assert false 
-  | TEbinop (Badd | Bsub | Bmul | Bdiv | Bmod as op, e1, e2) ->
-    (* TODO code pour arithmetique ints *) assert false 
+    let j_act = match op with
+      | Blt -> jl
+      | Ble -> jle
+      | Bgt -> jg
+      | Bge -> jge
+      | _ -> failwith "Stop bothering me VS code\n"
+    in
+    let l_true = new_label() and l_end = new_label() in
+    expr env e1 ++ pushq (reg rax) ++
+    expr env e2 ++ popq rdi ++
+    cmpq (reg rdi) (reg rax) ++
+    j_act l_true ++
+    movq (imm 0) (reg rax) ++ jmp l_end ++
+    label l_true ++ movq (imm 1) (reg rax) ++
+    label l_end
+  | TEbinop (Badd | Bsub | Bmul as op, e1, e2) ->
+    let act = match op with
+      | Badd -> addq
+      | Bsub -> subq
+      | Bmul -> imulq
+      | _ -> failwith "Stop bothering me VS code\n"
+    in
+    expr env e1 ++ pushq (reg rax) ++
+    expr env e2 ++ popq rdi ++
+    cmpq (reg rdi) (reg rax) ++
+    act (reg rdi) (reg rax) 
+  | TEbinop (Bdiv, e1, e2) ->
+    expr env e2 ++ pushq (reg rax) ++
+    expr env e1 ++ popq rdi ++
+    xorq (reg rdx) (reg rdx) ++
+    idivq (reg rdi)
+  | TEbinop (Bmod, e1, e2) ->
+    expr env e2 ++ pushq (reg rax) ++
+    expr env e1 ++ popq rdi ++
+    xorq (reg rdx) (reg rdx) ++
+    idivq (reg rdi) ++
+    movq (reg rdx) (reg rax)
   | TEbinop (Beq | Bne as op, e1, e2) ->
-    (* TODO code pour egalite toute valeur *) assert false 
+    let j_act = match op with
+      | Beq -> jz
+      | Bne -> jne
+      | _ -> failwith "Stop bothering me VS code\n"
+    in
+    let l_true = new_label() and l_end = new_label() in
+    expr env e1 ++ pushq (reg rax) ++
+    expr env e2 ++ popq rdi ++
+    cmpq (reg rdi) (reg rax) ++
+    j_act l_true ++
+    movq (imm 0) (reg rax) ++ jmp l_end ++
+    label l_true ++ movq (imm 1) (reg rax) ++
+    label l_end
   | TEunop (Uneg, e1) ->
-    (* TODO code pour negation ints *) assert false 
+    expr env e1 ++
+    negq (reg rax)
   | TEunop (Unot, e1) ->
-    (* TODO code pour negation bool *) assert false 
+    expr env e1 ++
+    notq (reg rax)
   | TEunop (Uamp, e1) ->
     (* TODO code pour & *) assert false 
   | TEunop (Ustar, e1) ->
     (* TODO code pour * *) assert false 
   | TEprint el ->
-    (* TODO code pour Print *) assert false 
+    let rec aux = function
+      | [] -> nop
+      | t::q -> expr env t ++ movq (reg rax) (reg rdi) ++ call "printf" ++ aux q
+    in
+    aux el
   | TEident x ->
     (* TODO code pour x *) assert false 
   | TEassign ([{expr_desc=TEident x}], [e1]) ->
@@ -112,15 +172,31 @@ let rec expr env e = match e.expr_desc with
   | TEassign (_, _) ->
      assert false
   | TEblock el ->
-     (* TODO code pour block *) assert false
+    let rec aux = function
+      | [] -> nop
+      | t::q -> expr env t ++ aux q
+    in aux el
   | TEif (e1, e2, e3) ->
-     (* TODO code pour if *) assert false
+    let l_false = new_label() and l_end = new_label() in
+    expr env e1 ++
+    testq (reg rax) (reg rax) ++
+    jz l_false ++
+    expr env e2 ++
+    jmp l_end ++
+    label l_false ++
+    expr env e3 ++
+    label l_end
   | TEfor (e1, e2) ->
      (* TODO code pour for *) assert false
   | TEnew ty ->
      (* TODO code pour new S *) assert false
   | TEcall (f, el) ->
-     (* TODO code pour appel fonction *) assert false
+    let rec aux = function
+    | [] -> nop
+    | t::q -> expr env t ++ pushq (reg rax) ++ aux q
+    in
+    aux el ++
+    call "f" (* à compléter en fonction *)
   | TEdot (e1, {f_ofs=ofs}) ->
      (* TODO code pour e.f *) assert false
   | TEvars _ ->
@@ -128,11 +204,16 @@ let rec expr env e = match e.expr_desc with
   | TEreturn [] ->
     (* TODO code pour return e *) assert false
   | TEreturn [e1] ->
-    (* TODO code pour return e1,... *) assert false
+    expr env e1
   | TEreturn _ ->
      assert false
   | TEincdec (e1, op) ->
-    (* TODO code pour return e++, e-- *) assert false
+    let act = match op with
+      | Inc -> incq
+      | Dec -> decq
+    in
+    expr env e1 ++
+    act (reg rax)
 
 let function_ f e =
   if !debug then eprintf "function %s:@." f.fn_name;
