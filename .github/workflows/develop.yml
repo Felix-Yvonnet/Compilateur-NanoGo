@@ -16,21 +16,30 @@ jobs:
           opam init --bare
           opam switch create 4.09.1
           eval $(opam env)
-      - name: Install ocp-indent
+      - name: Install dependencies
         run: |
-          opam install ocp-indent
+          opam install --yes ocamlformat dune
       - name: Format code
-        run: ocp-indent -i path/to/ocaml/file
+        run: |
+          # Find all modified OCaml files in the push
+          MODIFIED_OCAML_FILES=$(git diff --name-only HEAD HEAD --diff-filter=M -- '*.ml' '*.mli')
+          # Format each modified OCaml file
+          for file in $MODIFIED_OCAML_FILES; do
+            ocamlformat -i "$file"
+          done
       - name: Check formatting
         run: |
           git diff --exit-code
           if [ $? -ne 0 ] ; then
             exit 1
           fi
+      - name: Build dune
+        run: opam install dune
+      - name: Add dependencies
+        run: opam depext dune --yes
+      - name: Update Path
+        run: eval $(opam env)
+      - name: Build project
+        run: dune build 
       - name: Run tests
-        run: |
-          chmod +x ./tests/launch.sh
-          ./tests/launch.sh
-          if [ $? -ne 0 ] ; then
-            exit 1
-          fi
+        run: ./tests/launch.sh
