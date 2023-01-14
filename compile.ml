@@ -209,7 +209,7 @@ let rec expr env e = match e.expr_desc with
      label l_repeat ++
      expr env e1 ++
      testq !%rdi !%rdi ++
-     jnz l_end ++
+     jz l_end ++
      expr env e2 ++
      movq !%rdi !%r12 ++
      jmp l_repeat ++
@@ -242,12 +242,13 @@ let rec expr env e = match e.expr_desc with
       | Dec -> decq
     in
     expr env e1 ++
-    act (reg rax)
+    (* add sth to change var value *)
+    act (reg rdi)
 
 let function_ f e =
   if !debug then eprintf "function %s:@." f.fn_name;
-  (* TODO code pour fonction *) let s = f.fn_name in 
-  label ("F_" ^ s) ++ expr empty_env e ++ ret ++ inline "\n" 
+  let s = f.fn_name in 
+  label ("F_" ^ s) ++ expr empty_env e ++ ret 
 
 let decl code = function
   | TDfunction (f, e) -> code ++ function_ f e
@@ -256,7 +257,7 @@ let decl code = function
 let file ?debug:(b=false) dl =
   debug := b;
   (* TODO calcul offset champs *)
-  (* TODO code fonctions *) let funs = List.fold_left decl nop dl in
+  let funs = List.fold_left decl nop dl in
   { text =
       globl "main" ++ label "main" ++
       call "F_main" ++
@@ -270,6 +271,7 @@ print_int:
         xorq    %rax, %rax
         call    printf
         ret
+
 print_str:
         movq    %rdi, %rsi
         movq    $S_str, %rdi
