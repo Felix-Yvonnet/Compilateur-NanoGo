@@ -166,11 +166,24 @@ let rec expr env e = match e.expr_desc with
     expr env e1 ++
     negq (reg rdi)
   | TEunop (Unot, e1) ->
+    let l_un = new_label () and l_zero = new_label () in
     expr env e1 ++
-    notq (reg rdi)
+    testq !%rdi !%rdi ++
+    jz l_un ++
+    movq (imm 0) !%rdi ++
+    jmp l_zero ++
+    label l_un ++
+    movq (imm 1) !%rdi ++
+    label l_zero
+
   | TEunop (Uamp, e1) ->
     (* TODO code pour & *) assert false
   | TEunop (Ustar, e1) ->
+    (*
+    let code = expr env e1 in
+    code ++
+    movq (ind !%rax) !%rax
+    *)
     (* TODO code pour * *) assert false
   | TEprint el ->
     let rec aux = function
@@ -216,7 +229,8 @@ let rec expr env e = match e.expr_desc with
      label l_end ++
      movq !%r12 !%rdi
   | TEnew ty ->
-     (* TODO code pour new S *) assert false
+     malloc (sizeof ty) ++
+     movq (reg rax) (reg rdi)
   | TEcall (f, el) ->
     let rec aux = function
     | [] -> nop
@@ -224,6 +238,13 @@ let rec expr env e = match e.expr_desc with
     in
     aux el ++
     call ("F_"^f.fn_name) (* à compléter en fonction *)
+
+    (* let n = List.length args in
+    let code = List.fold_left (fun c e -> c ++ expr env e ++ pushq !%rdi) nop args in
+    let code = code ++ call f in
+    let code = if e.expr_typ = Tvoid then code
+               else addq (imm (8*n)) !%rsp ++ popq !%rax in
+    code*)
   | TEdot (e1, {f_ofs=ofs}) ->
      (* TODO code pour e.f *) assert false
   | TEvars _ ->
@@ -243,7 +264,7 @@ let rec expr env e = match e.expr_desc with
     in
     expr env e1 ++
     (* add sth to change var value *)
-    act (reg rdi)
+    act !%rdi
 
 let function_ f e =
   if !debug then eprintf "function %s:@." f.fn_name;
