@@ -197,7 +197,7 @@ let rec expr env e = match e.expr_desc with
   | TEif (e1, e2, e3) ->
     let l_false = new_label() and l_end = new_label() in
     expr env e1 ++
-    testq (reg rax) (reg rax) ++
+    testq (reg rdi) (reg rdi) ++
     jz l_false ++
     expr env e2 ++
     jmp l_end ++
@@ -205,7 +205,16 @@ let rec expr env e = match e.expr_desc with
     expr env e3 ++
     label l_end
   | TEfor (e1, e2) ->
-     (* TODO code pour for *) assert false
+     let l_end = new_label () and l_repeat = new_label () in
+     label l_repeat ++
+     expr env e1 ++
+     testq !%rdi !%rdi ++
+     jnz l_end ++
+     expr env e2 ++
+     movq !%rdi !%r12 ++
+     jmp l_repeat ++
+     label l_end ++
+     movq !%r12 !%rdi
   | TEnew ty ->
      (* TODO code pour new S *) assert false
   | TEcall (f, el) ->
@@ -220,10 +229,12 @@ let rec expr env e = match e.expr_desc with
   | TEvars _ ->
      assert false (* fait dans block *)
   | TEreturn [] ->
-    (* TODO code pour return e *) assert false
+    ret
   | TEreturn [e1] ->
-    expr env e1
-  | TEreturn _ ->
+    expr env e1 ++
+    movq !%rdi !%rax ++
+    ret
+  | TEreturn el ->
      assert false
   | TEincdec (e1, op) ->
     let act = match op with
