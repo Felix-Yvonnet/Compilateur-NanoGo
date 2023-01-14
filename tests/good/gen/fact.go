@@ -9,6 +9,7 @@ func fact ( n int ) int {
 
 
 func main () {
+	fmt.Print("5! = ",fact(5))
 	}
 
 /*
