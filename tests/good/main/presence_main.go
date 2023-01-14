@@ -4,5 +4,4 @@ func main(){};
 
 /*
 == Expected compiler output ==
-
 */
