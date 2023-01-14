@@ -84,11 +84,14 @@ let rec expr env e = match e.expr_desc with
     let l = alloc_string s in
     movq (ilab l) (reg rdi) (* ++ call "strdup" *)
   | TEbinop (Band, e1, e2) ->
-    let l_true = new_label () and l_end = new_label () in
-    compile_bool (fun l -> expr env e1 ++ jmp l_true) ++
-    jmp l_end ++
-    label l_true ++
+    let l_end = new_label () in
+    expr env e1 ++
+    testq !%rdi !%rdi ++
+    je l_end ++
     expr env e2 ++
+    testq !%rdi !%rdi ++
+    jne l_end ++
+    movq (imm 1) !%rdi ++
     label l_end
   | TEbinop (Bor, e1, e2) ->
     let l_end = new_label () and l_true = new_label () in
@@ -96,25 +99,28 @@ let rec expr env e = match e.expr_desc with
     testq !%rdi !%rdi ++
     jne l_true ++
     expr env e2 ++
+    testq !%rdi !%rdi ++
+    jne l_true ++
     jmp l_end ++
     label l_true ++
     movq (imm 1) !%rdi ++
     label l_end
   | TEbinop (Blt | Ble | Bgt | Bge as op, e1, e2) ->
     let j_act = match op with
-      | Blt -> jl
-      | Ble -> jle
-      | Bgt -> jg
-      | Bge -> jge
+      | Blt -> jg
+      | Ble -> jge
+      | Bgt -> jl
+      | Bge -> jle
       | _ -> failwith "Stop bothering me VS code\n"
     in
+    (* Sorry for the confusion, it works and I don't want to change it anymore *)
     let l_true = new_label() and l_end = new_label() in
-    expr env e1 ++ pushq (reg rax) ++
-    expr env e2 ++ popq rdi ++
-    cmpq (reg rdi) (reg rax) ++
+    expr env e1 ++ pushq (reg rdi) ++
+    expr env e2 ++ popq rsi ++
+    cmpq (reg rsi) (reg rdi) ++
     j_act l_true ++
-    movq (imm 0) (reg rax) ++ jmp l_end ++
-    label l_true ++ movq (imm 1) (reg rax) ++
+    movq (imm 0) (reg rdi) ++ jmp l_end ++
+    label l_true ++ movq (imm 1) (reg rdi) ++
     label l_end
   | TEbinop (Badd | Bsub | Bmul as op, e1, e2) ->
     let act = match op with
@@ -123,21 +129,25 @@ let rec expr env e = match e.expr_desc with
       | Bmul -> imulq
       | _ -> failwith "Stop bothering me VS code\n"
     in
-    expr env e1 ++ pushq (reg rax) ++
-    expr env e2 ++ popq rdi ++
-    cmpq (reg rdi) (reg rax) ++
-    act (reg rdi) (reg rax) 
+    expr env e1 ++ pushq (reg rdi) ++
+    expr env e2 ++ popq r12 ++
+    cmpq (reg r12) (reg rdi) ++
+    act (reg rdi) (reg r12) ++
+    movq !%r12 !%rdi
   | TEbinop (Bdiv, e1, e2) ->
-    expr env e2 ++ pushq (reg rax) ++
-    expr env e1 ++ popq rdi ++
+    expr env e1 ++ pushq (reg rdi) ++
+    expr env e2 ++ popq rax ++
     xorq (reg rdx) (reg rdx) ++
-    idivq (reg rdi)
-  | TEbinop (Bmod, e1, e2) ->
-    expr env e2 ++ pushq (reg rax) ++
-    expr env e1 ++ popq rdi ++
-    xorq (reg rdx) (reg rdx) ++
+    cqto ++
     idivq (reg rdi) ++
-    movq (reg rdx) (reg rax)
+    movq !%rax !%rdi
+  | TEbinop (Bmod, e1, e2) ->
+    expr env e1 ++ pushq (reg rdi) ++
+    expr env e2 ++ popq rax ++
+    xorq (reg rdx) (reg rdx) ++
+    cqto ++
+    idivq (reg rdi) ++
+    movq (reg rdx) (reg rdi)
   | TEbinop (Beq | Bne as op, e1, e2) ->
     let j_act = match op with
       | Beq -> jz
@@ -145,19 +155,19 @@ let rec expr env e = match e.expr_desc with
       | _ -> failwith "Stop bothering me VS code\n"
     in
     let l_true = new_label() and l_end = new_label() in
-    expr env e1 ++ pushq (reg rax) ++
-    expr env e2 ++ popq rdi ++
-    cmpq (reg rdi) (reg rax) ++
+    expr env e1 ++ pushq (reg rdi) ++
+    expr env e2 ++ popq r12 ++
+    cmpq (reg r12) (reg rdi) ++
     j_act l_true ++
-    movq (imm 0) (reg rax) ++ jmp l_end ++
-    label l_true ++ movq (imm 1) (reg rax) ++
+    movq (imm 0) (reg rdi) ++ jmp l_end ++
+    label l_true ++ movq (imm 1) (reg rdi) ++
     label l_end
   | TEunop (Uneg, e1) ->
     expr env e1 ++
-    negq (reg rax)
+    negq (reg rdi)
   | TEunop (Unot, e1) ->
     expr env e1 ++
-    notq (reg rax)
+    notq (reg rdi)
   | TEunop (Uamp, e1) ->
     (* TODO code pour & *) assert false
   | TEunop (Ustar, e1) ->
