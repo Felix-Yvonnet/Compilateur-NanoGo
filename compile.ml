@@ -82,7 +82,7 @@ let rec expr env e = match e.expr_desc with
     xorq (reg rdi) (reg rdi)
   | TEconstant (Cstring s) ->
     let l = alloc_string s in
-    movq (ilab ("$"^l)) (reg rdi) ++ call "strdup"
+    movq (ilab l) (reg rdi) (* ++ call "strdup" *)
   | TEbinop (Band, e1, e2) ->
     let l_true = new_label () and l_end = new_label () in
     compile_bool (fun l -> expr env e1 ++ jmp l_true) ++
@@ -91,9 +91,14 @@ let rec expr env e = match e.expr_desc with
     expr env e2 ++
     label l_end
   | TEbinop (Bor, e1, e2) ->
-    let l_end = new_label () in
-    compile_bool (fun l -> expr env e1 ++ jmp l_end) ++
+    let l_end = new_label () and l_true = new_label () in
+    expr env e1 ++
+    testq !%rdi !%rdi ++
+    jne l_true ++
     expr env e2 ++
+    jmp l_end ++
+    label l_true ++
+    movq (imm 1) !%rdi ++
     label l_end
   | TEbinop (Blt | Ble | Bgt | Bge as op, e1, e2) ->
     let j_act = match op with
@@ -154,15 +159,18 @@ let rec expr env e = match e.expr_desc with
     expr env e1 ++
     notq (reg rax)
   | TEunop (Uamp, e1) ->
-    (* TODO code pour & *) assert false 
+    (* TODO code pour & *) assert false
   | TEunop (Ustar, e1) ->
-    (* TODO code pour * *) assert false 
+    (* TODO code pour * *) assert false
   | TEprint el ->
     let rec aux = function
       | [] -> nop
-      | t::q -> expr env t ++ movq (reg rax) (reg rdi) ++ call "printf" ++ aux q
+      | t::q -> expr env t ++ (if (t.expr_typ = Tint || t.expr_typ = Tbool) then call "print_int" else call "print_str") ++ 
+                 (if q!=[] then movq (ilab "S_space") (reg rdi) ++ call "print_str" else nop ) ++ aux q
     in
-    aux el
+    aux el ++
+    movq (ilab "S_newline") (reg rdi) ++
+    call "print_str"
   | TEident x ->
     (* TODO code pour x *) assert false 
   | TEassign ([{expr_desc=TEident x}], [e1]) ->
@@ -196,7 +204,7 @@ let rec expr env e = match e.expr_desc with
     | t::q -> expr env t ++ pushq (reg rax) ++ aux q
     in
     aux el ++
-    call "f" (* à compléter en fonction *)
+    call ("F_"^f.fn_name) (* à compléter en fonction *)
   | TEdot (e1, {f_ofs=ofs}) ->
      (* TODO code pour e.f *) assert false
   | TEvars _ ->
@@ -217,7 +225,8 @@ let rec expr env e = match e.expr_desc with
 
 let function_ f e =
   if !debug then eprintf "function %s:@." f.fn_name;
-  (* TODO code pour fonction *) let s = f.fn_name in label ("F_" ^ s) 
+  (* TODO code pour fonction *) let s = f.fn_name in 
+  label ("F_" ^ s) ++ expr empty_env e ++ ret ++ inline "\n" 
 
 let decl code = function
   | TDfunction (f, e) -> code ++ function_ f e
@@ -240,10 +249,19 @@ print_int:
         xorq    %rax, %rax
         call    printf
         ret
+print_str:
+        movq    %rdi, %rsi
+        movq    $S_str, %rdi
+        xorq    %rax, %rax
+        call    printf
+        ret
 "; (* TODO print pour d'autres valeurs *)
    (* TODO appel malloc de stdlib *)
     data =
       label "S_int" ++ string "%ld" ++
+      label "S_str" ++ string "%s" ++
+      label "S_space" ++ string " " ++
+      label "S_newline" ++ string "\n" ++
       (Hashtbl.fold (fun l s d -> label l ++ string s ++ d) strings nop)
     ;
   }
