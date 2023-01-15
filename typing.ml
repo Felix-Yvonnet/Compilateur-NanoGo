@@ -582,9 +582,11 @@ let phase2 = function
 (* j'ai pas trouvé comment faire propre... *)
 
 (* 3. type check function bodies *)
-let sizeof = function
+let rec sizeof = function
   | Tint | Tbool | Tstring | Tptr _ -> 8
-  | _ -> (* TODO *) assert false
+  | Tstruct {s_fields} -> Hashtbl.fold (fun x y z -> z + sizeof y.f_typ) s_fields 0
+  | Tmany tl -> List.fold_left (fun x y -> x + sizeof y) 0 tl
+  | Twild -> 0
 
 let phase3 = function
   | PDfunction { pf_name = { id; loc }; pf_params; pf_body = e; pf_typ = tyl } ->
