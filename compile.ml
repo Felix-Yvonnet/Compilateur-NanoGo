@@ -116,17 +116,16 @@ let rec expr env e = match e.expr_desc with
     label l_end
   | TEbinop (Blt | Ble | Bgt | Bge as op, e1, e2) ->
     let j_act = match op with
-      | Blt -> jg
-      | Ble -> jge
-      | Bgt -> jl
-      | Bge -> jle
+      | Blt -> jl
+      | Ble -> jle
+      | Bgt -> jg
+      | Bge -> jge
       | _ -> failwith "Stop bothering me VS code\n"
     in
-    (* Sorry for the confusion, it works and I don't want to change it anymore *)
     let l_true = new_label() and l_end = new_label() in
     expr env e1 ++ pushq (reg rdi) ++
     expr env e2 ++ popq rsi ++
-    cmpq (reg rsi) (reg rdi) ++
+    cmpq (reg rdi) (reg rsi) ++
     j_act l_true ++
     movq (imm 0) (reg rdi) ++ jmp l_end ++
     label l_true ++ movq (imm 1) (reg rdi) ++
@@ -138,11 +137,10 @@ let rec expr env e = match e.expr_desc with
       | Bmul -> imulq
       | _ -> failwith "Stop bothering me VS code\n"
     in
-    expr env e1 ++ pushq (reg rdi) ++
-    expr env e2 ++ popq r12 ++
-    cmpq (reg r12) (reg rdi) ++
-    act (reg rdi) (reg r12) ++
-    movq !%r12 !%rdi
+    expr env e2 ++ pushq (reg rdi) ++
+    expr env e1 ++ popq r12 ++
+    cmpq (reg rdi) (reg r12) ++
+    act (reg r12) (reg rdi)
   | TEbinop (Bdiv, e1, e2) ->
     expr env e1 ++ pushq (reg rdi) ++
     expr env e2 ++ popq rax ++
@@ -160,7 +158,7 @@ let rec expr env e = match e.expr_desc with
   | TEbinop (Beq | Bne as op, e1, e2) ->
     let j_act = match op with
       | Beq -> jz
-      | Bne -> jne
+      | Bne -> jnz
       | _ -> failwith "Stop bothering me VS code\n"
     in
     let l_true = new_label() and l_end = new_label() in
@@ -188,12 +186,8 @@ let rec expr env e = match e.expr_desc with
   | TEunop (Uamp, e1) ->
     (* TODO code pour & *) assert false
   | TEunop (Ustar, e1) ->
-    (*
-    let code = expr env e1 in
-    code ++
-    movq (ind !%rax) !%rax
-    *)
-    (* TODO code pour * *) assert false
+    expr env e1 ++
+    movq (ind rdi) !%rdi
   | TEprint el ->
     let rec aux = function
       | [] -> nop
@@ -238,22 +232,13 @@ let rec expr env e = match e.expr_desc with
      label l_end ++
      movq !%r12 !%rdi
   | TEnew ty ->
-     malloc (sizeof ty) ++
+     allocz (sizeof ty) ++
      movq (reg rax) (reg rdi)
   | TEcall (f, el) ->
-    let rec aux = function
-    | [] -> nop
-    | t::q -> expr env t ++ pushq (reg rax) ++ aux q
-    in
-    aux el ++
-    call ("F_"^f.fn_name) (* à compléter en fonction *)
-
-    (* let n = List.length args in
-    let code = List.fold_left (fun c e -> c ++ expr env e ++ pushq !%rdi) nop args in
-    let code = code ++ call f in
-    let code = if e.expr_typ = Tvoid then code
-               else addq (imm (8*n)) !%rsp ++ popq !%rax in
-    code*)
+    let n = List.length el in
+    List.fold_left (fun c e -> c ++ expr env e ++ pushq !%rdi) nop el ++
+    call ("F_"^f.fn_name) ++
+    if e.expr_typ != Twild then addq (imm (8*n)) !%rsp ++ popq rax else nop
   | TEdot (e1, {f_ofs=ofs}) ->
      (* TODO code pour e.f *) assert false
   | TEvars _ ->
