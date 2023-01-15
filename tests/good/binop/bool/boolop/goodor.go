@@ -7,5 +7,5 @@ func main(){
 
 /*
 == Expected program output ==
-1
+true
 */

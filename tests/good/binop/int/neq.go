@@ -8,6 +8,6 @@ func main(){
 
 /*
 == Expected program output ==
-1
-0
+true
+false
 */

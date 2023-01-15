@@ -4,10 +4,12 @@ import "fmt";
 func main(){
 	fmt.Print(!true)
 	fmt.Print(!false)
+	fmt.Print(!(3>2))
 }
 
 /*
 == Expected program output ==
-0
-1
+false
+true
+false
 */

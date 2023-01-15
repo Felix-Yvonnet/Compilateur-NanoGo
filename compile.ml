@@ -69,6 +69,15 @@ let compile_bool f =
   movq (imm 0) (reg rdi) ++ jmp l_end ++
   label l_true ++ movq (imm 1) (reg rdi) ++ label l_end
 
+let print_type ty = match ty with
+  | Tint |Tptr _ | Twild-> call "print_int"
+  | Tbool -> let l_false = new_label () and l_true = new_label () in testq !%rdi !%rdi ++ jz l_false ++ 
+            movq (ilab (alloc_string "true")) (reg rdi) ++ jmp l_true ++ label l_false ++ movq (ilab (alloc_string "false")) (reg rdi) ++ 
+            label l_true ++ call "print_str"
+  | Tstring -> call "print_str"
+  | Tstruct {s_name;s_fields} -> nop
+  | _ -> failwith "Nop"
+
 let rec expr env e = match e.expr_desc with
   | TEskip ->
     nop
@@ -188,7 +197,7 @@ let rec expr env e = match e.expr_desc with
   | TEprint el ->
     let rec aux = function
       | [] -> nop
-      | t::q -> expr env t ++ (if (t.expr_typ = Tint || t.expr_typ = Tbool) then call "print_int" else call "print_str") ++ 
+      | t::q -> expr env t ++ print_type t.expr_typ ++ 
                  (if q!=[] then movq (ilab "S_space") (reg rdi) ++ call "print_str" else nop ) ++ aux q
     in
     aux el ++
