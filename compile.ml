@@ -55,10 +55,11 @@ type env = {
   ofs_this: int;
   nb_locals: int ref; (* maximum *)
   next_local: int; (* 0, 1, ... *)
+  local_var: (string, int) Hashtbl.t;
 }
 
 let empty_env =
-  { exit_label = ""; ofs_this = -1; nb_locals = ref 0; next_local = 0 }
+  { exit_label = ""; ofs_this = -1; nb_locals = ref 0; next_local = 0; local_var = Hashtbl.create 10 }
 
 let mk_bool d = { expr_desc = d; expr_typ = Tbool }
 
@@ -98,21 +99,13 @@ let rec expr env e = match e.expr_desc with
     testq !%rdi !%rdi ++
     je l_end ++
     expr env e2 ++
-    testq !%rdi !%rdi ++
-    jne l_end ++
-    movq (imm 1) !%rdi ++
     label l_end
   | TEbinop (Bor, e1, e2) ->
-    let l_end = new_label () and l_true = new_label () in
+    let l_end = new_label () in
     expr env e1 ++
     testq !%rdi !%rdi ++
-    jne l_true ++
+    jne l_end ++
     expr env e2 ++
-    testq !%rdi !%rdi ++
-    jne l_true ++
-    jmp l_end ++
-    label l_true ++
-    movq (imm 1) !%rdi ++
     label l_end
   | TEbinop (Blt | Ble | Bgt | Bge as op, e1, e2) ->
     let j_act = match op with
@@ -236,9 +229,12 @@ let rec expr env e = match e.expr_desc with
      movq (reg rax) (reg rdi)
   | TEcall (f, el) ->
     let n = List.length el in
-    List.fold_left (fun c e -> c ++ expr env e ++ pushq !%rdi) nop el ++
+    List.fold_left (fun c t -> c ++ subq (imm (sizeof t)) !%rsp ) nop f.fn_typ ++ (* on descend pour laisser la place aux rez *)
+    subq (imm 16) !%rbp ++
+    List.fold_left (fun c e -> c ++ expr env e ++ pushq !%rdi) nop el ++ (* on ajoute les arguments évalués *)
     call ("F_"^f.fn_name) ++
     if e.expr_typ != Twild then addq (imm (8*n)) !%rsp ++ popq rax else nop
+
   | TEdot (e1, {f_ofs=ofs}) ->
      (* TODO code pour e.f *) assert false
   | TEvars _ ->
@@ -262,8 +258,8 @@ let rec expr env e = match e.expr_desc with
 
 let function_ f e =
   if !debug then eprintf "function %s:@." f.fn_name;
-  let s = f.fn_name in 
-  label ("F_" ^ s) ++ expr empty_env e ++ ret 
+  let s = f.fn_name in
+  label ("F_" ^ s) ++ expr empty_env e ++ ret
 
 let decl code = function
   | TDfunction (f, e) -> code ++ function_ f e

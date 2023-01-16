@@ -1,4 +1,3 @@
-
 all:
 	ocamlopt -c lib.ml
 	ocamlopt -c x86_64.mli
