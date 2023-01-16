@@ -3,6 +3,7 @@ import "fmt";
 
 func main(){
 	fmt.Print(12,13)
+	fmt.Print()
 }
 
 /*

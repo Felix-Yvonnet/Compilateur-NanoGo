@@ -61,22 +61,16 @@ type env = {
 let empty_env =
   { exit_label = ""; ofs_this = -1; nb_locals = ref 0; next_local = 0; local_var = Hashtbl.create 10 }
 
-let mk_bool d = { expr_desc = d; expr_typ = Tbool }
-
-(* f reçoit le label correspondant à ``renvoyer vrai'' *)
-let compile_bool f =
-  let l_true = new_label () and l_end = new_label () in
-  f l_true ++
-  movq (imm 0) (reg rdi) ++ jmp l_end ++
-  label l_true ++ movq (imm 1) (reg rdi) ++ label l_end
-
-let print_type ty = match ty with
+let rec print_type ty = match ty with
   | Tint |Tptr _ | Twild-> call "print_int"
   | Tbool -> let l_false = new_label () and l_true = new_label () in testq !%rdi !%rdi ++ jz l_false ++ 
-            movq (ilab (alloc_string "true")) (reg rdi) ++ jmp l_true ++ label l_false ++ movq (ilab (alloc_string "false")) (reg rdi) ++ 
+            movq (ilab (alloc_string "true")) (reg rdi) ++ jmp l_true ++ label l_false ++ 
+            movq (ilab (alloc_string "false")) (reg rdi) ++ 
             label l_true ++ call "print_str"
   | Tstring -> call "print_str"
-  | Tstruct {s_name;s_fields} -> nop
+  | Tstruct {s_name;s_fields} -> movq (ilab "S_lbracket") !%rdi ++ Hashtbl.fold  (fun z y x -> x ++ 
+          print_type y.f_typ) s_fields (call "print_str") ++
+                                 movq (ilab "S_rbracket") !%rdi ++ call "print_str"
   | _ -> failwith "Nop"
 
 let rec expr env e = match e.expr_desc with
@@ -132,7 +126,6 @@ let rec expr env e = match e.expr_desc with
     in
     expr env e2 ++ pushq (reg rdi) ++
     expr env e1 ++ popq r12 ++
-    cmpq (reg rdi) (reg r12) ++
     act (reg r12) (reg rdi)
   | TEbinop (Bdiv, e1, e2) ->
     expr env e1 ++ pushq (reg rdi) ++
@@ -190,8 +183,17 @@ let rec expr env e = match e.expr_desc with
     aux el ++
     movq (ilab "S_newline") (reg rdi) ++
     call "print_str"
+
   | TEident x ->
-    (* TODO code pour x *) assert false 
+    print_int (Hashtbl.find env.local_var x.v_name);
+    print_string "\n";
+    nop
+    (*begin
+    match x.v_typ with
+      | Tint -> movq (ind ~ofs: (16*(Hashtbl.find env.local_var x.v_name)) rbx) !%rdi
+      | _ -> movq (ind ~ofs: (Hashtbl.find env.local_var x.v_name) rbx) !%rdi
+  end*)
+
   | TEassign ([{expr_desc=TEident x}], [e1]) ->
     (* TODO code pour x := e *) assert false 
   | TEassign ([lv], [e1]) ->
@@ -201,8 +203,30 @@ let rec expr env e = match e.expr_desc with
   | TEblock el ->
     let rec aux = function
       | [] -> nop
-      | t::q -> expr env t ++ aux q
-    in aux el
+      | t::q -> begin
+          match t.expr_desc with 
+          | TEvars (vl,el) -> 
+            let f c = let a = Hashtbl.add env.local_var c.v_name (!(env.nb_locals)) in 
+                      env.nb_locals := !(env.nb_locals) + sizeof c.v_typ; a in
+            List.iter f vl;
+            List.fold_left (fun c e -> expr env e ++ pushq !%rdi ++ c) nop el ++
+            aux q
+          | _ -> expr env t ++ aux q
+  end
+    in aux el ++ nop ++
+    let rec aux = function
+    | [] -> nop
+    | t::q -> begin 
+        match t.expr_desc with 
+        | TEvars (vl,el) -> 
+          let f c = env.nb_locals:= !(env.nb_locals) - sizeof c.v_typ; Hashtbl.remove env.local_var c.v_name in
+          List.iter f vl;
+          List.fold_left (fun c e -> popq rdi ++ c) nop el ++
+          aux q
+        | _ -> nop
+end
+  in aux el
+
   | TEif (e1, e2, e3) ->
     let l_false = new_label() and l_end = new_label() in
     expr env e1 ++
@@ -296,6 +320,8 @@ print_str:
       label "S_str" ++ string "%s" ++
       label "S_space" ++ string " " ++
       label "S_newline" ++ string "\n" ++
+      label "S_lbracket" ++ string "{" ++      
+      label "S_rbracket" ++ string "}" ++
       (Hashtbl.fold (fun l s d -> label l ++ string s ++ d) strings nop)
     ;
   }

@@ -221,6 +221,8 @@ and expr_desc env loc = function
 
   | PEcall ({ id = "fmt.Print" }, el) -> (
       fmt_used := true;
+      if List.length el = 0 then (TEprint[], tvoid, false)
+      else (
       let loc = (List.hd el).pexpr_loc in
       let l = List.map (recure env) el in
       match l with
@@ -235,7 +237,7 @@ and expr_desc env loc = function
                     "Function call as part of a plotting are not supported"
               | _ -> ())
             l;
-          (TEprint l, tvoid, false))
+          (TEprint l, tvoid, false)))
 
   | PEcall ({ id = "new" }, [ { pexpr_desc = PEident { id; loc } } ]) ->
       let ty =
@@ -583,7 +585,7 @@ let phase2 = function
 
 (* 3. type check function bodies *)
 let rec sizeof = function
-  | Tint | Tbool | Tstring | Tptr _ -> 8
+  | Tint | Tbool | Tstring | Tptr _ -> 16
   | Tstruct {s_fields} -> Hashtbl.fold (fun x y z -> z + sizeof y.f_typ) s_fields 0
   | Tmany tl -> List.fold_left (fun x y -> x + sizeof y) 0 tl
   | Twild -> 0
