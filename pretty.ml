@@ -206,6 +206,7 @@ let rec get_tast_typ typ parent_id =
   | Tptr typ -> create_node "Tptr" [] [ ("typ", get_tast_typ typ) ]
   | Twild -> create_node "Twild" [] []
   | Tmany typ_list -> create_node "Tmany" [] [ ("typ_list", fold_children get_tast_typ typ_list) ]
+  | Tptrnil -> create_node "Tptrnil" [] []
 
 and get_tast_field { f_name; f_typ; f_ofs } parent_id =
   create_node parent_id "sfield" [

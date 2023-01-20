@@ -26,13 +26,13 @@ let () =
 
     if debug then begin
       let ast_dot_file = open_out (Filename.chop_suffix file ".go" ^ "_tast.dot") in
-      Printf.fprintf ast_dot_file "%s" (Pretty.get_dot_tast f (not !no_pretty));
+      Printf.fprintf ast_dot_file "%s" (Pretty.get_dot_tast (f debug) (not !no_pretty));
       close_out ast_dot_file
     end;
 
     if !type_only then exit 0;
 
-    let code = Compile.file ~debug f in
+    let code = Compile.file ~debug (f debug) in
 
     let c = open_out (Filename.chop_suffix file ".go" ^ ".s") in
     let fmt = formatter_of_out_channel c in
