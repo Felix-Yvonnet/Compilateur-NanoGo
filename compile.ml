@@ -150,7 +150,8 @@ let rec expr env e = match e.expr_desc with
     let l_true = new_label() and l_end = new_label() in
     expr env e1 ++ pushq (reg rdi) ++
     expr env e2 ++ popq r12 ++
-    cmpq (reg r12) (reg rdi) ++
+    (if e1.expr_typ = Tstring then call "strcmp" ++ testq !%rax !%rax
+    else cmpq (reg r12) (reg rdi) ) ++
     j_act l_true ++
     movq (imm 0) (reg rdi) ++ jmp l_end ++
     label l_true ++ movq (imm 1) (reg rdi) ++
@@ -185,14 +186,10 @@ let rec expr env e = match e.expr_desc with
     call "print_str"
 
   | TEident x ->
+    print_string (x.v_name ^ ": ");
     print_int (Hashtbl.find env.local_var x.v_name);
     print_string "\n";
-    nop
-    (*begin
-    match x.v_typ with
-      | Tint -> movq (ind ~ofs: (16*(Hashtbl.find env.local_var x.v_name)) rbx) !%rdi
-      | _ -> movq (ind ~ofs: (Hashtbl.find env.local_var x.v_name) rbx) !%rdi
-  end*)
+    movq (ind ~ofs: (-(Hashtbl.find env.local_var x.v_name)-8) rbp) !%rdi
 
   | TEassign ([{expr_desc=TEident x}], [e1]) ->
     (* TODO code pour x := e *) assert false 
@@ -201,29 +198,33 @@ let rec expr env e = match e.expr_desc with
   | TEassign (_, _) ->
      assert false
   | TEblock el ->
+    let code =
     let rec aux = function
       | [] -> nop
       | t::q -> begin
           match t.expr_desc with 
-          | TEvars (vl,el) -> 
-            let f c = let a = Hashtbl.add env.local_var c.v_name (!(env.nb_locals)) in 
-                      env.nb_locals := !(env.nb_locals) + sizeof c.v_typ; a in
+          | TEvars (vl,eel) -> 
+            let max_size = List.fold_left (fun x y -> x + sizeof y.v_typ) 0 vl in
+            let k = ref (sizeof (List.hd (List.rev vl)).v_typ) in
+            let f c = let a = Hashtbl.add env.local_var c.v_name (!(env.nb_locals) + max_size - !k) in 
+                      k := !k + sizeof c.v_typ; a in
             List.iter f vl;
-            List.fold_left (fun c e -> expr env e ++ pushq !%rdi ++ c) nop el ++
+            env.nb_locals := !(env.nb_locals) + max_size;
+            List.fold_left (fun c e -> expr env e ++ pushq !%rdi ++ c) nop eel ++
             aux q
           | _ -> expr env t ++ aux q
   end
-    in aux el ++ nop ++
+    in aux el in code ++
     let rec aux = function
     | [] -> nop
     | t::q -> begin 
         match t.expr_desc with 
-        | TEvars (vl,el) -> 
+        | TEvars (vl,eel) -> 
           let f c = env.nb_locals:= !(env.nb_locals) - sizeof c.v_typ; Hashtbl.remove env.local_var c.v_name in
           List.iter f vl;
-          List.fold_left (fun c e -> popq rdi ++ c) nop el ++
+          List.fold_left (fun c e -> popq rdi ++ c) nop eel ++
           aux q
-        | _ -> nop
+        | _ -> aux q
 end
   in aux el
 
@@ -283,7 +284,7 @@ end
 let function_ f e =
   if !debug then eprintf "function %s:@." f.fn_name;
   let s = f.fn_name in
-  label ("F_" ^ s) ++ expr empty_env e ++ ret
+  label ("F_" ^ s) ++ pushq !%rbp ++ movq !%rsp !%rbp ++ expr empty_env e ++ popq rbp ++ ret
 
 let decl code = function
   | TDfunction (f, e) -> code ++ function_ f e

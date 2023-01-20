@@ -585,7 +585,7 @@ let phase2 = function
 
 (* 3. type check function bodies *)
 let rec sizeof = function
-  | Tint | Tbool | Tstring | Tptr _ -> 16
+  | Tint | Tbool | Tstring | Tptr _ -> 8
   | Tstruct {s_fields} -> Hashtbl.fold (fun x y z -> z + sizeof y.f_typ) s_fields 0
   | Tmany tl -> List.fold_left (fun x y -> x + sizeof y) 0 tl
   | Twild -> 0
