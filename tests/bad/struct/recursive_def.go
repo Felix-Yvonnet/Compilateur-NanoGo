@@ -5,8 +5,11 @@ type S struct {
 	x2 int;
 };
 
+func main(){}
+
 /*
 == Expected compiler output ==
-File "./tests/bad/struct/recursive_def.go", line 3, characters 5-6:
-error: Recursive structure definition is forbidden
+File "./tests/bad/struct/recursive_def.go", line 0, characters -1--1:
+error: cyclic definition:
+	structure 'S' has field of type 'S'
 */

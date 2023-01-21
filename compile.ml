@@ -143,18 +143,18 @@ let rec expr env e = match e.expr_desc with
     movq (reg rdx) (reg rdi)
   | TEbinop (Beq | Bne as op, e1, e2) ->
     let j_act = match op with
-      | Beq -> jz
-      | Bne -> jnz
+      | Beq -> jnz
+      | Bne -> jz
       | _ -> failwith "Stop bothering me VS code\n"
     in
     let l_true = new_label() and l_end = new_label() in
     expr env e1 ++ pushq (reg rdi) ++
     expr env e2 ++ popq r12 ++
     (if e1.expr_typ = Tstring then call "strcmp" ++ testq !%rax !%rax
-    else cmpq (reg r12) (reg rdi) ) ++
+    else cmpq (reg rdi) (reg r12) ) ++
     j_act l_true ++
-    movq (imm 0) (reg rdi) ++ jmp l_end ++
-    label l_true ++ movq (imm 1) (reg rdi) ++
+    movq (imm 1) (reg rdi) ++ jmp l_end ++
+    label l_true ++ movq (imm 0) (reg rdi) ++
     label l_end
   | TEunop (Uneg, e1) ->
     expr env e1 ++
@@ -186,9 +186,10 @@ let rec expr env e = match e.expr_desc with
     call "print_str"
 
   | TEident x ->
+    (* For debugging :
     print_string (x.v_name ^ ": ");
     print_int (Hashtbl.find env.local_var x.v_name);
-    print_string "\n";
+    print_string "\n";*)
     movq (ind ~ofs: (-(Hashtbl.find env.local_var x.v_name)-8) rbp) !%rdi
 
   | TEassign ([{expr_desc=TEident x}], [e1]) ->
@@ -212,7 +213,7 @@ let rec expr env e = match e.expr_desc with
             env.nb_locals := !(env.nb_locals) + max_size;
             List.fold_left (fun c e -> expr env e ++ pushq !%rdi ++ c) nop eel ++
             aux q
-          | _ -> expr env t ++ aux q
+          | _ -> let code = expr env t in code ++ aux q
   end
     in aux el in code ++
     let rec aux = function

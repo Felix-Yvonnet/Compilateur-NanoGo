@@ -7,6 +7,6 @@ type S struct {
 
 /*
 == Expected compiler output ==
-File "./tests/bad/struct/wrong_type_def.go", line 4, characters 1-3:
-error: In structure S, type s not well defined
+File "./tests/bad/struct/wrong_type_def.go", line 4, characters 4-5:
+error: unknown type 's'
 */

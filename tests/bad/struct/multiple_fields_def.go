@@ -11,6 +11,6 @@ func main(){}
 
 /*
 == Expected compiler output ==
-File "./tests/bad/struct/multiple_fields_def.go", line 3, characters 5-6:
-error: In S structure, x already defined
+File "./tests/bad/struct/multiple_fields_def.go", line 5, characters 1-2:
+error: structure 'S': redefinition of field 'x'
 */

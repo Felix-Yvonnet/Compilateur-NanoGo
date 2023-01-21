@@ -12,6 +12,7 @@ let fmt_imported = ref true
 
 let dummy_loc = Lexing.dummy_pos, Lexing.dummy_pos
 exception Error of Ast.location * string
+let error loc e = raise (Error (loc,e))
 exception Anomaly of string
 
 
@@ -429,7 +430,10 @@ let rec add_fields structure_context structure used_names = function
 (* only creates function mappings while editing structure fields *)
 let phase2 structures functions = function
   | PDfunction {pf_name={id; loc}; pf_params=pl; pf_typ=tyl} ->
-      if id = "main" && pl = [] && tyl = [] then found_main := true;
+      if id = "main" then (
+         (if pl != [] then error loc (sprintf "function main doesn't expect arguments"));
+         (if tyl != [] then error loc (sprintf "function main doesn't doesn't expect return values"));
+        found_main := true);
       if M.mem id functions
         then raise (Error (loc, "function '" ^ id ^ "' already defined"));
   (* why 2? both return address and previous %rbp value are on the stack *)

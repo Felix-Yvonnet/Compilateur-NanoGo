@@ -12,6 +12,6 @@ func main () {
 
 /*
 == Expected compiler output ==
-File "./tests/bad/func/return/return_type.go", line 5, characters 8-12:
-error: Wrong type, expected int got bool
+File "./tests/bad/func/return/return_type.go", line 5, characters 1-12:
+error: This expression has type 'bool' but an expression of type 'int' was expected
 */

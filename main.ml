@@ -24,11 +24,10 @@ let () =
 
     let f = Typing.file f in
 
-    if debug then begin
-      let ast_dot_file = open_out (Filename.chop_suffix file ".go" ^ "_tast.dot") in
-      Printf.fprintf ast_dot_file "%s" (Pretty.get_dot_tast (f debug) (not !no_pretty));
-      close_out ast_dot_file
-    end;
+  
+    let ast_dot_file = open_out (Filename.chop_suffix file ".go" ^ "_tast.dot") in
+    Printf.fprintf ast_dot_file "%s" (Pretty.get_dot_tast (f debug) (not !no_pretty));
+    close_out ast_dot_file;
 
     if !type_only then exit 0;
 

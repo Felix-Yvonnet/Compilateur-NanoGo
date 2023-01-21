@@ -13,5 +13,5 @@ type S struct {
 /*
 == Expected compiler output ==
 File "./tests/bad/struct/multiple_struct_def.go", line 8, characters 5-6:
-error: Structure S already defined
+error: structure 'S' already defined
 */
