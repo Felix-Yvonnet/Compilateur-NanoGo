@@ -73,6 +73,10 @@ let rec print_type ty = match ty with
                                  movq (ilab "S_rbracket") !%rdi ++ call "print_str"
   | _ -> failwith "Nop"
 
+let rec change_var env name typ = match typ with
+  | Tint | Tbool | Tstring -> movq (ind ~ofs: (Hashtbl.find env.local_var vari.v_name) rbp) !%rdi
+  | Tstruct s -> Hashtbl.fold (fun x y z -> change_var env z.f_name z.f_typ) s.s_fields nop
+
 let rec expr env e = match e.expr_desc with
   | TEskip ->
     nop
@@ -143,18 +147,17 @@ let rec expr env e = match e.expr_desc with
     movq (reg rdx) (reg rdi)
   | TEbinop (Beq | Bne as op, e1, e2) ->
     let j_act = match op with
-      | Beq -> jnz
-      | Bne -> jz
+      | Beq -> jz
+      | Bne -> jnz
       | _ -> failwith "Stop bothering me VS code\n"
     in
     let l_true = new_label() and l_end = new_label() in
     expr env e1 ++ pushq (reg rdi) ++
-    expr env e2 ++ popq r12 ++
+    expr env e2 ++ popq rsi ++
     (if e1.expr_typ = Tstring then call "strcmp" ++ testq !%rax !%rax
-    else cmpq (reg rdi) (reg r12) ) ++
-    j_act l_true ++
-    movq (imm 1) (reg rdi) ++ jmp l_end ++
-    label l_true ++ movq (imm 0) (reg rdi) ++
+    else cmpq (reg rdi) (reg rsi)) ++ j_act l_true ++
+    movq (imm 0) (reg rdi) ++ jmp l_end ++
+    label l_true ++ movq (imm 1) (reg rdi) ++
     label l_end
   | TEunop (Uneg, e1) ->
     expr env e1 ++
@@ -193,7 +196,9 @@ let rec expr env e = match e.expr_desc with
     movq (ind ~ofs: (-(Hashtbl.find env.local_var x.v_name)-8) rbp) !%rdi
 
   | TEassign ([{expr_desc=TEident x}], [e1]) ->
-    (* TODO code pour x := e *) assert false 
+    expr env e1 ++
+    change_var env x.v_name x.v_typ
+    
   | TEassign ([lv], [e1]) ->
     (* TODO code pour x1,... := e1,... *) assert false 
   | TEassign (_, _) ->
@@ -256,7 +261,6 @@ end
   | TEcall (f, el) ->
     let n = List.length el in
     List.fold_left (fun c t -> c ++ subq (imm (sizeof t)) !%rsp ) nop f.fn_typ ++ (* on descend pour laisser la place aux rez *)
-    subq (imm 16) !%rbp ++
     List.fold_left (fun c e -> c ++ expr env e ++ pushq !%rdi) nop el ++ (* on ajoute les arguments évalués *)
     call ("F_"^f.fn_name) ++
     if e.expr_typ != Twild then addq (imm (8*n)) !%rsp ++ popq rax else nop
