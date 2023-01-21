@@ -73,9 +73,11 @@ let rec print_type ty = match ty with
                                  movq (ilab "S_rbracket") !%rdi ++ call "print_str"
   | _ -> failwith "Nop"
 
-let rec change_var env name typ = match typ with
-  | Tint | Tbool | Tstring -> movq (ind ~ofs: (Hashtbl.find env.local_var vari.v_name) rbp) !%rdi
-  | Tstruct s -> Hashtbl.fold (fun x y z -> change_var env z.f_name z.f_typ) s.s_fields nop
+let rec get_offset = function
+  | TEdot (e, x) -> get_offset e.expr_desc + x.f_ofs
+  | TEident v -> Hashtbl.find env.local_var v.v_name
+  | TEunop (Ustar, x) -> get_offset x.expr_desc
+  | _ -> failwith "Not a l_value.\n"
 
 let rec expr env e = match e.expr_desc with
   | TEskip ->
@@ -196,8 +198,7 @@ let rec expr env e = match e.expr_desc with
     movq (ind ~ofs: (-(Hashtbl.find env.local_var x.v_name)-8) rbp) !%rdi
 
   | TEassign ([{expr_desc=TEident x}], [e1]) ->
-    expr env e1 ++
-    change_var env x.v_name x.v_typ
+    expr env e1
     
   | TEassign ([lv], [e1]) ->
     (* TODO code pour x1,... := e1,... *) assert false 
@@ -219,7 +220,7 @@ let rec expr env e = match e.expr_desc with
             List.fold_left (fun c e -> expr env e ++ pushq !%rdi ++ c) nop eel ++
             aux q
           | _ -> let code = expr env t in code ++ aux q
-  end
+    end
     in aux el in code ++
     let rec aux = function
     | [] -> nop
@@ -231,8 +232,8 @@ let rec expr env e = match e.expr_desc with
           List.fold_left (fun c e -> popq rdi ++ c) nop eel ++
           aux q
         | _ -> aux q
-end
-  in aux el
+      end
+    in aux el
 
   | TEif (e1, e2, e3) ->
     let l_false = new_label() and l_end = new_label() in
@@ -273,18 +274,21 @@ end
     ret
   | TEreturn [e1] ->
     expr env e1 ++
-    movq !%rdi !%rax ++
     ret
   | TEreturn el ->
-     assert false
+    List.fold_left (fun c e -> c ++ expr env e ++ pushq !%rdi) nop el ++
+    ret
   | TEincdec (e1, op) ->
     let act = match op with
       | Inc -> incq
       | Dec -> decq
     in
+    let ofs = get_offset e.expr_desc in
     expr env e1 ++
-    (* add sth to change var value *)
-    act !%rdi
+    movq (ind ~ofs:ofs rbp) !%rdx ++
+    act !%rdx ++
+    movq !%rdx (ind ~ofs:ofs rbp)
+
 
 let function_ f e =
   if !debug then eprintf "function %s:@." f.fn_name;
