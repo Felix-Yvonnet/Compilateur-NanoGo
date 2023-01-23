@@ -80,6 +80,7 @@ let rec print_type ty = match ty with
   | Tstruct {s_name;s_fields} -> movq (ilab "S_lbracket") !%rdi ++ Hashtbl.fold  (fun z y x -> x ++ 
           print_type y.f_typ) s_fields (call "print_str") ++
                                  movq (ilab "S_rbracket") !%rdi ++ call "print_str"
+  | Tmany el -> List.fold_left (fun x y -> x ++ popq rdi ++ print_type y) nop el
   | _ -> failwith "Nop"
 
 let rec get_offset env = function
@@ -90,7 +91,7 @@ let rec get_offset env = function
 
 let rec move_return_value added_ofs base_ofs = function
   | [] -> nop
-  | t::q ->  move_return_value (added_ofs+sizeof t.expr_typ) base_ofs q ++
+  | t::q ->  move_return_value (added_ofs + sizeof t.expr_typ) base_ofs q ++
              popq rdi ++ movq !%rdi (ind ~ofs: (added_ofs+base_ofs) rbp)
 
 let rec expr env e = match e.expr_desc with
@@ -211,16 +212,25 @@ let rec expr env e = match e.expr_desc with
     expr env e1 ++
     movq !%rdi (ind ~ofs:ofs rbp)
     
-  | TEassign ([lv], [e1]) ->
+  | TEassign (lv, el) ->
     (* TODO code pour x1,... := e1,... *) assert false 
-  | TEassign (_, _) ->
-     assert false
   | TEblock el ->
     let code =
     let rec aux = function
       | [] -> nop
       | t::q -> begin
           match t.expr_desc with 
+          | TEvars (vl,[{expr_desc = TEcall (f2,el)}]) ->
+            let vl = List.rev vl in
+            let max_size = List.fold_left (fun x y -> x + sizeof y.v_typ) 0 vl in
+            let k = ref (sizeof (List.hd (List.rev vl)).v_typ) in
+            let f c = let a = Hashtbl.add env.local_var c.v_name (env.next_local + max_size - !k) in 
+                      k := !k + sizeof c.v_typ; a in
+            List.iter f vl;
+            env.next_local <- env.next_local + max_size;
+            expr env ({expr_desc = TEcall (f2,el); expr_typ = Tmany f2.fn_typ}) ++
+            aux q
+
           | TEvars (vl,eel) -> 
             let vl = List.rev vl and eel = List.rev eel in 
             let max_size = List.fold_left (fun x y -> x + sizeof y.v_typ) 0 vl in
@@ -239,6 +249,11 @@ let rec expr env e = match e.expr_desc with
     | [] -> nop
     | t::q -> begin 
         match t.expr_desc with 
+        | TEvars (vl,[{expr_desc = TEcall (f2,el)}]) -> 
+          let f c = env.next_local <- env.next_local - sizeof c.v_typ; Hashtbl.remove env.local_var c.v_name in
+          List.iter f vl;
+          List.fold_left (fun c e -> popq rdi ++ c) nop f2.fn_typ ++
+          aux q
         | TEvars (vl,eel) -> 
           let f c = env.next_local <- env.next_local - sizeof c.v_typ; Hashtbl.remove env.local_var c.v_name in
           List.iter f vl;
@@ -279,8 +294,16 @@ let rec expr env e = match e.expr_desc with
     call ("F_"^f.fn_name) ++
     addq (imm (8*n)) !%rsp
 
-  | TEdot (e1, {f_ofs=ofs}) ->
-     (* TODO code pour e.f *) assert false
+  | TEdot (e1, {f_ofs=ofs; f_typ}) ->
+    expr env e1 ++ 
+    (match e1.expr_typ with
+      | Tptr Tstruct _ -> movq (ind rdi) !%rdi
+      | _ -> nop) ++
+    addq (imm ofs) !%rdi ++
+    (match f_typ with
+        | Tint | Tbool | Tptr _ -> movq (ind rdi) !%rdi
+        | _ -> nop)
+
   | TEvars _ ->
      assert false (* fait dans block *)
   | TEreturn [] ->
@@ -293,7 +316,11 @@ let rec expr env e = match e.expr_desc with
     popq rbp ++
     ret
   | TEreturn el ->
-    move_return_value 0 env.ofs_this el ++
+    let ret_offset = ref env.ofs_this in 
+    let el = List.rev el in
+    List.fold_left (fun code expression  -> 
+    ret_offset := !ret_offset - sizeof expression.expr_typ;
+    expr env expression ++ movq !%rdi (ind ~ofs: (- !ret_offset) rbp) ++ code) nop el ++
     movq !%rbp !%rsi ++
     popq rbp ++
     ret
@@ -312,10 +339,10 @@ let function_ f e =
   let s = f.fn_name in
   let env = empty_env in
   env.next_local <- -24;
-  List.iter (fun x -> Hashtbl.add env.local_var x.v_name env.next_local; env.next_local <- env.next_local + sizeof x.v_typ) f.fn_params;
-  env.ofs_this <- List.fold_left (fun x y -> x + sizeof y.v_typ) 0 f.fn_params;
+  List.iter (fun x -> Hashtbl.add env.local_var x.v_name env.next_local; env.next_local <- env.next_local - sizeof x.v_typ) f.fn_params;
+  env.ofs_this <- List.fold_left (fun x y -> x - sizeof y.v_typ) (-8) f.fn_params ;
   env.next_local <- 0;
-  label ("F_" ^ s) ++ pushq !%rbp ++ movq !%rsp !%rbp ++ expr env e ++ popq rbp ++ ret
+  label ("F_" ^ s) ++ pushq !%rbp ++ movq !%rsp !%rbp ++ expr env e ++ (if f.fn_typ = [] then popq rbp ++ ret else nop)
 
 let decl code = function
   | TDfunction (f, e) -> code ++ function_ f e
