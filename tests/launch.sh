@@ -83,6 +83,8 @@ find "${CALL_PATH}" -name "*.go" -print0 |
 
         launchTest "${FILE}"
 
-        [[ -n ${FAILED_TEST} ]] && exit 1;
+        [[ -n ${FAILED_TEST} ]] && find -type f -name '*.dot' -delete && exit 1;
 
     done
+
+find -type f -name '*.dot' -delete

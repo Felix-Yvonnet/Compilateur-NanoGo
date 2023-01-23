@@ -7,7 +7,9 @@ type T struct {
 
 func main(){
 	fmt.Print(2==2)
+	fmt.Print("\n")
 	fmt.Print(2==3)
+	fmt.Print("\n")
 
 }
 

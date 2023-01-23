@@ -3,7 +3,9 @@ import "fmt";
 
 func main(){
 	fmt.Print(5-2)
+	fmt.Print("\n")
 	fmt.Print(645132-9877645132)
+	fmt.Print("\n")
 }
 
 /*

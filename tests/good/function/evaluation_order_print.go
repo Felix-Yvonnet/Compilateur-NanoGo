@@ -12,11 +12,12 @@ func f (b bool) int {
 }
 
 func main(){
-	var z,t = f(true), f(false)
-	fmt.Print(z,t,"\n")
+	var z = false
+	fmt.Print(f(z),f(!z))
+	fmt.Print("\n")
 }
 
 /*
 == Expected program output ==
-TrueFalse10
+TrueFalse01
 */

@@ -7,6 +7,7 @@ func main(){
 		fmt.Print("3<2")
 	} else {
 		fmt.Print("What were you expecting ?")
+		fmt.Print("\n")
 	}
 }
 

@@ -9,13 +9,11 @@ func main(){
 	fmt.Print(x,y)
 	var z = false
 	fmt.Print(z)
+	fmt.Print("\n")
 }
 
 /*
 == Expected program output ==
-7
-coucou 7
-1 2
-false
+7coucou712false
 */
 

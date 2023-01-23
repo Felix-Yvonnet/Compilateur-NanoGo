@@ -3,6 +3,7 @@ import "fmt";
 
 func main(){
 	fmt.Print(5<2)
+	fmt.Print("\n")
 }
 
 /*

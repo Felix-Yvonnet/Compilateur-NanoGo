@@ -3,13 +3,11 @@ import "fmt";
 
 func main(){
 	sum := 0
-	i := 0
-	for i < 5 {
+	for i := 0; i < 5; i++ {
 		sum = sum + i
-		fmt.Print(sum)
-		i++
 	}
 	fmt.Print(sum)
+	fmt.Print("\n")
 }
 
 /*

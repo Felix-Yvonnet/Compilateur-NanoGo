@@ -5,9 +5,9 @@ func main(){
 	var x = 1
 	{
 		var x = 2
-		fmt.Print("\tx =",x)
+		fmt.Print("\tx = ",x, "\n")
 	}
-	fmt.Print("x =",x)
+	fmt.Print("x = ",x, "\n")
 }
 
 /*
