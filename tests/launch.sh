@@ -38,6 +38,7 @@ function launchTest()
 
         rm -rf "${FILEPATH_NOEXT}.s"
         rm -rf "${FILEPATH_NOEXT}"
+        rm -rf "${FILEPATH_NOEXT}_tast.dot"
 
     else
 
