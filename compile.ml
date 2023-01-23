@@ -64,8 +64,8 @@ let empty_env =
 let rec print_type ty = match ty with
   | Tint |Tptr _ | Twild-> call "print_int"
   | Tbool -> let l_false = new_label () and l_true = new_label () in testq !%rdi !%rdi ++ jz l_false ++ 
-            movq (ilab (alloc_string "true")) (reg rdi) ++ jmp l_true ++ label l_false ++ 
-            movq (ilab (alloc_string "false")) (reg rdi) ++ 
+            movq (ilab (alloc_string "true")) (reg rdi) ++ jmp l_true ++ label l_false ++
+            movq (ilab (alloc_string "false")) (reg rdi) ++
             label l_true ++ call "print_str"
   | Tstring -> call "print_str"
   | Tstruct {s_name;s_fields} -> movq (ilab "S_lbracket") !%rdi ++ Hashtbl.fold  (fun z y x -> x ++ 
@@ -73,11 +73,11 @@ let rec print_type ty = match ty with
                                  movq (ilab "S_rbracket") !%rdi ++ call "print_str"
   | _ -> failwith "Nop"
 
-let rec get_offset = function
-  | TEdot (e, x) -> get_offset e.expr_desc + x.f_ofs
-  | TEident v -> Hashtbl.find env.local_var v.v_name
-  | TEunop (Ustar, x) -> get_offset x.expr_desc
-  | _ -> failwith "Not a l_value.\n"
+let rec get_offset env = function
+  | TEdot (e, x) -> get_offset env e.expr_desc - x.f_ofs
+  | TEident v -> -(Hashtbl.find env.local_var v.v_name)
+  | TEunop (Ustar, x) -> get_offset env x.expr_desc
+  | _ -> failwith "Not a l-value."
 
 let rec expr env e = match e.expr_desc with
   | TEskip ->
@@ -176,7 +176,7 @@ let rec expr env e = match e.expr_desc with
     label l_zero
 
   | TEunop (Uamp, e1) ->
-    (* TODO code pour & *) assert false
+    expr env e1
   | TEunop (Ustar, e1) ->
     expr env e1 ++
     movq (ind rdi) !%rdi
@@ -184,7 +184,7 @@ let rec expr env e = match e.expr_desc with
     let rec aux = function
       | [] -> nop
       | t::q -> expr env t ++ print_type t.expr_typ ++ 
-                 (if q!=[] then movq (ilab "S_space") (reg rdi) ++ call "print_str" else nop ) ++ aux q
+                 (if q!=[] && t.expr_typ != Tstring then movq (ilab "S_space") (reg rdi) ++ call "print_str" else nop ) ++ aux q
     in
     aux el ++
     movq (ilab "S_newline") (reg rdi) ++
@@ -198,7 +198,9 @@ let rec expr env e = match e.expr_desc with
     movq (ind ~ofs: (-(Hashtbl.find env.local_var x.v_name)-8) rbp) !%rdi
 
   | TEassign ([{expr_desc=TEident x}], [e1]) ->
-    expr env e1
+    let ofs = get_offset env (TEident x) - 8 in
+    expr env e1 ++
+    movq !%rdi (ind ~ofs:ofs rbp)
     
   | TEassign ([lv], [e1]) ->
     (* TODO code pour x1,... := e1,... *) assert false 
@@ -252,10 +254,8 @@ let rec expr env e = match e.expr_desc with
      testq !%rdi !%rdi ++
      jz l_end ++
      expr env e2 ++
-     movq !%rdi !%r12 ++
      jmp l_repeat ++
-     label l_end ++
-     movq !%r12 !%rdi
+     label l_end
   | TEnew ty ->
      allocz (sizeof ty) ++
      movq (reg rax) (reg rdi)
@@ -283,11 +283,10 @@ let rec expr env e = match e.expr_desc with
       | Inc -> incq
       | Dec -> decq
     in
-    let ofs = get_offset e.expr_desc in
+    let ofs = get_offset env (e1.expr_desc) - 8 in
     expr env e1 ++
-    movq (ind ~ofs:ofs rbp) !%rdx ++
-    act !%rdx ++
-    movq !%rdx (ind ~ofs:ofs rbp)
+    act !%rdi ++
+    movq !%rdi (ind ~ofs:ofs rbp)
 
 
 let function_ f e =
