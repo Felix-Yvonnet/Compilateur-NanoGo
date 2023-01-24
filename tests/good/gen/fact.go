@@ -10,10 +10,10 @@ func fact ( n int ) int {
 
 
 func main () {
-	fmt.Print("5! = ",fact(5))
+	fmt.Print("5! = ",fact(5),"\n")
 	}
 
 /*
-== Expected compiler output ==
-
+== Expected program output ==
+5! = 120
 */
