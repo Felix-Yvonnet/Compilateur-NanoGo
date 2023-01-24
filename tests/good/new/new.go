@@ -7,8 +7,10 @@ type S struct {
 
 func main(){
 	var t *S = new(S)
-	fmt.Print(t)
+	t.x1 = 1
 }
 
 /*
+== Expected program output ==
+*{x1:1}
 */
