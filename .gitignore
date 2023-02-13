@@ -33,3 +33,8 @@ setup.log
 
 # Local OPAM switch
 _opam/
+
+# Other things 
+*.log *.pdf
+
+

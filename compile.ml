@@ -402,6 +402,7 @@ let rec expr env e = match e.expr_desc with
       | Dec -> decq
     in
     let ofs = get_offset env (e1.expr_desc) - 8 in
+    print_int ofs;
     expr env e1 ++
     act !%rdi ++
     movq !%rdi (ind ~ofs:ofs rbp)
@@ -410,7 +411,7 @@ let function_ f e =
   if !debug then eprintf "function %s:@." f.fn_name;
   let s = f.fn_name in
   let env = empty_env in
-  env.next_local <- -32;
+  env.next_local <- -24;
   List.iter (fun x -> Hashtbl.add env.local_var x.v_name env.next_local; env.next_local <- env.next_local - sizeof x.v_typ) f.fn_params;
   env.ofs_this <- List.fold_left (fun x y -> x - sizeof y.v_typ) (-8) f.fn_params ;
   env.next_local <- 0;

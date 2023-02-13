@@ -1,0 +1,54 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+
+\title{Rapport NGOC}
+\author{Félix Yvonnet}
+\date{January 2023}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+Bonjour, bonsoir. Je ne sais pas trop quoi dire mais essayons de faire un petit tour d'horizon de ce qui a été fait.
+
+\section{Choix techniques}
+C'était technique. La plupart des choix seront détaillé dans la partie \textit{Difficultés}. Les choix effectués sont, pour la plupart, de recommencer ce qui a été fait depuis 0. Le manque total d'explications sur l'utilité et l'utilisation des fonctions présentes menait à ce précepte donc tout va bien.
+\section{Difficultés}
+J'ai eu quelques problèmes à bien comprendre ce qu'on attendait de nous à cause d'un léger manque de documentation et d'explication de code. Par exemple je n'ai toujours aucune idée d'à quoi sert l'environnement. Les points que j'utilise sont tous ajoutés ou modifiés et j'aurai même pu m'en passer.\\
+L'un des problèmes majeur du code est que le code regorge d'abréviations sans queues ni têtes ni commentaires. Il a donc fallut doubler le temps passé pour d'abord essayer de deviner ce qu'on voulait nous demander.\\
+
+Pour les opérations on a fait comme le précédent projet prog, c'était plus simple. J'ai donc rapidement fini les opérateurs binaires et unaires.\\
+On remarquera que la sémantique ne donnait pas toute les informations, par exemple l'égalité n'a pas été définie. Il y a donc un doute qui subsiste sur si l'égalité entre pointeurs doit être considérée comme égalité binaire ou égalité des objets pointés.
+
+\section{\'Eléments réalisés et différences avec cas général}
+\subsection{Typing}
+C'est là où ont commencé les problèmes. J'ai changé pas mal de points par exemple la liste de variables pour check unused que j'ai transformé en Hashtable. Cependant c'est en remarquant un problème légèrement important dans mon typage qui pourrait me géner par la suite (et a moins de 2 semaines du rendu) que je me suis rabbatu vers l'autre option... J'ai du coup utilisé le typage de Lucas envoyé par Mme Sighireanu.\\
+Je n'ai pas non plus eu le temps de trop me pencher sur son typage donc on va supposer qu'il est bon pour l'instant...
+
+\subsection{fmt.Print}
+J'ai d'abord commencé par coder un Print un peu plus joli avec quelques retours à la lignes et espaces agréables (à la manière de Python avec une option pour supprimer). Mais j'ai ouïe dire que les tests étaient automatique donc demandaient d'avoir le même exactement que Go. J'ai donc finalement retiré toute mise en page parce que j'ai pas tout à fait compris quand il fallait mettre l'espace ou pas (s'il y a une string c'est collé pas mais avec des ints ou je ne sais quoi).
+
+\subsection{Variables}
+Pour la gestion des variables j'ai ajouté une table de hachage qui aux noms associe l'écart au pointeur rbp (on remarquera que les variables locales "cachent" les anciennent grâce à l'implémentation de Hashtbl.add et remove).\\
+Ma stratégie a été de tout le temps connaître leur position de sorte à pouvoir l'appeler à n'importe quel moment.
+
+\subsection{Fonctions}
+Je ne suis pas sûr de moi, j'ai essayé de coller le plus à la sémantique en évaluant les arguments des fonctions de droite à gauche et les assignations de variables de gauche à droite (pourquoi ?) du coup j'ai parfois résolu mes problèmes à grand coup de List.rev...
+
+\subsection{Structures}
+Bon là j'ai plus ou moins abandonné... J'ai fais des TEdot sans avoir fait la déclaration...\\
+Si vous avez la foie vous pouvez regarder le code et voir que j'ai commençé à faire tous les cas mais que je me contente de faire des popq sur des quadwords...\\
+Mais sinon c'était sympa :)\\
+Dommage ça a un grand impact sur le reste vu qu'on ne peut pas tester TEdot ni TEprint et compagnie sans affecter une variable.
+
+\section{Tests}
+Faites ./tests/launch.sh et il y a une belle quantité de tests de qualité :)\\
+Si besoin est, pour montrer que ça passe quand même quelques tests pô trop mal.
+
+\section{Remerciements}
+J'aimerais remercier, pour ses conseils avisés, le merveilleux Vincent Lafeychine (qui nous a par exemple envoyé le fichier launch.sh qui permet de faire les tests efficacement).\\
+Je tiens aussi à remercier le légendaire Louis Lemmonier pour le projet retardé à chaque étape, ainsi que la direction qui lui a permit ce tour de force! \\
+Finalement je remercie tous les héros qui m'ont soutenu, de près ou de loin dans cette aventure aventureuse. 
+
+\end{document}

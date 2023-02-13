@@ -20,3 +20,7 @@ func main () {
 /*
 == Expected compiler output ==
 */
+
+/*
+Bon là on va pas essayer de voir le program output vu que var t T segfault...
+*/
